@@ -1,0 +1,6 @@
+streamlit
+requests
+PyJWT
+Werkzeug
+sqlalchemy
+pymysql
