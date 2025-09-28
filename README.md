@@ -1,2 +1,2 @@
 # Caloriadev
-Repositório deve do contador de caloria
+Repositório dev do contador de caloria
