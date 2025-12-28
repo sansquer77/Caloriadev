@@ -1,58 +1,466 @@
 import streamlit as st
-from datetime import date
+import pandas as pd
+from datetime import date, datetime, timedelta
 from auth import generate_token, decode_token, create_password_hash, verify_password_hash
-from api_perplexity import analyze_meal_photo
+from api_perplexity import analyze_meal_photo, analyze_meal_by_description
 from models import MealData
-from storage import save_meal, get_daily_macros, get_aggregated_macros, create_user
+from storage import (
+    save_meal, get_daily_macros, get_aggregated_macros, create_user,
+    get_user_by_username, get_user_meals, get_meals_with_location, delete_meal
+)
+from db import init_db
+import json
 
-st.title("Análise de Refeições por Foto")
+# Configuração da página
+st.set_page_config(
+    page_title="Caloria - Análise Nutricional",
+    page_icon="🍽️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Tela de cadastro rápido (simplificado)
-if 'token' not in st.session_state:
-    with st.form("Cadastro"):
-        username = st.text_input("Usuário")
-        password = st.text_input("Senha", type='password')
-        weight = st.number_input("Peso (kg)", min_value=0.0, format="%.1f")
-        height = st.number_input("Altura (m)", min_value=0.0, format="%.2f")
-        cal_limit = st.number_input("Limite Calorias", min_value=0.0)
-        protein_limit = st.number_input("Limite Proteínas (g)", min_value=0.0)
-        fat_limit = st.number_input("Limite Gorduras (g)", min_value=0.0)
-        carbs_limit = st.number_input("Limite Carboidratos (g)", min_value=0.0)
-        sugar_limit = st.number_input("Limite Açúcares (g)", min_value=0.0)
+# Inicializa o banco de dados
+init_db()
 
-        submit = st.form_submit_button("Cadastrar")
-        if submit:
-            pwd_hash = create_password_hash(password)
-            create_user(username, pwd_hash, weight, height, cal_limit, protein_limit, fat_limit,
-                        carbs_limit, sugar_limit)
-            st.success("Usuário cadastrado! Faça login.")
+# CSS customizado
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #2E7D32;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 10px;
+        text-align: center;
+    }
+    .success-msg {
+        background-color: #d4edda;
+        padding: 1rem;
+        border-radius: 5px;
+        border: 1px solid #c3e6cb;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-else:
-    st.write("Autenticado")
-    # Upload/câmera foto
-    img_file_buffer = st.camera_input("Tire a foto do prato")
-    if img_file_buffer is not None:
-        img_bytes = img_file_buffer.getvalue()
-        # Análise IA
-        with st.spinner("Analisando a foto..."):
-            nutrients = analyze_meal_photo(img_bytes)
-            if nutrients:
-                # Salvar resultado
-                today = date.today()
-                meal = MealData(
-                    user_id=1,  # Simples para demo, substituir com id do usuário logado
-                    date=today,
-                    meal_type="lunch",
-                    calories=nutrients['calories'],
-                    protein=nutrients['protein'],
-                    fat=nutrients['fat'],
-                    carbs=nutrients['carbs'],
-                    sugar=nutrients['sugar']
-                )
-                save_meal(meal)
-                st.success(f"Analisado! Calorias: {nutrients['calories']:.1f}")
-            else:
-                st.error("Erro na análise da foto.")
+# Funções auxiliares
+def init_session_state():
+    """Inicializa variáveis de sessão."""
+    if 'user_id' not in st.session_state:
+        st.session_state.user_id = None
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'current_location' not in st.session_state:
+        st.session_state.current_location = None
 
-    # Mostrar totais por semana/mês
-    # Implementar exceções e controle de usuário real
+def show_login_page():
+    """Exibe página de login/cadastro."""
+    st.markdown('<h1 class="main-header">🍽️ Caloria</h1>', unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Análise nutricional inteligente por foto</p>", unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["🔐 Login", "📝 Cadastro"])
+    
+    with tab1:
+        with st.form("login_form"):
+            username = st.text_input("Usuário", key="login_user")
+            password = st.text_input("Senha", type='password', key="login_pass")
+            submit = st.form_submit_button("Entrar", use_container_width=True)
+            
+            if submit:
+                user = get_user_by_username(username)
+                if user and verify_password_hash(user['password_hash'], password):
+                    st.session_state.user_id = user['id']
+                    st.session_state.username = user['username']
+                    st.session_state.logged_in = True
+                    st.success("Login realizado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha inválidos.")
+    
+    with tab2:
+        with st.form("register_form"):
+            st.subheader("Criar nova conta")
+            new_username = st.text_input("Usuário", key="reg_user")
+            new_password = st.text_input("Senha", type='password', key="reg_pass")
+            confirm_password = st.text_input("Confirmar Senha", type='password', key="reg_confirm")
+            
+            st.divider()
+            st.subheader("Dados físicos (opcional)")
+            col1, col2 = st.columns(2)
+            with col1:
+                weight = st.number_input("Peso (kg)", min_value=0.0, max_value=500.0, format="%.1f", key="reg_weight")
+                height = st.number_input("Altura (m)", min_value=0.0, max_value=3.0, format="%.2f", key="reg_height")
+            
+            st.divider()
+            st.subheader("Limites diários (opcional)")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                cal_limit = st.number_input("Calorias", min_value=0.0, value=2000.0, key="reg_cal")
+                protein_limit = st.number_input("Proteínas (g)", min_value=0.0, value=50.0, key="reg_prot")
+            with col2:
+                fat_limit = st.number_input("Gorduras (g)", min_value=0.0, value=65.0, key="reg_fat")
+                carbs_limit = st.number_input("Carboidratos (g)", min_value=0.0, value=300.0, key="reg_carbs")
+            with col3:
+                sugar_limit = st.number_input("Açúcares (g)", min_value=0.0, value=50.0, key="reg_sugar")
+            
+            submit = st.form_submit_button("Cadastrar", use_container_width=True)
+            
+            if submit:
+                if not new_username or not new_password:
+                    st.error("Preencha usuário e senha.")
+                elif new_password != confirm_password:
+                    st.error("As senhas não coincidem.")
+                elif get_user_by_username(new_username):
+                    st.error("Este usuário já existe.")
+                else:
+                    pwd_hash = create_password_hash(new_password)
+                    user_id = create_user(
+                        new_username, pwd_hash, weight or None, height or None,
+                        cal_limit or None, protein_limit or None, fat_limit or None,
+                        carbs_limit or None, sugar_limit or None
+                    )
+                    st.success("Conta criada com sucesso! Faça login.")
+
+def show_sidebar():
+    """Exibe sidebar com navegação."""
+    with st.sidebar:
+        st.markdown(f"### 👋 Olá, {st.session_state.username}!")
+        st.divider()
+        
+        page = st.radio(
+            "Navegação",
+            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições"],
+            label_visibility="collapsed"
+        )
+        
+        st.divider()
+        if st.button("🚪 Sair", use_container_width=True):
+            st.session_state.user_id = None
+            st.session_state.username = None
+            st.session_state.logged_in = False
+            st.rerun()
+        
+        return page
+
+def get_location_component():
+    """Componente para capturar localização."""
+    st.markdown("#### 📍 Localização")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        lat = st.number_input("Latitude", value=0.0, format="%.6f", key="lat_input")
+    with col2:
+        lon = st.number_input("Longitude", value=0.0, format="%.6f", key="lon_input")
+    
+    location_name = st.text_input("Nome do local (opcional)", placeholder="Ex: Restaurante XYZ", key="loc_name")
+    
+    # Dica para obter localização
+    st.caption("💡 Dica: No celular, use apps de GPS para obter sua localização atual.")
+    
+    return lat, lon, location_name
+
+def show_analysis_page():
+    """Página principal de análise de fotos."""
+    st.markdown("## 📸 Análise de Refeição")
+    
+    # Tabs para foto ou texto
+    tab1, tab2 = st.tabs(["📷 Tirar Foto", "✍️ Descrever Refeição"])
+    
+    with tab1:
+        st.markdown("Tire uma foto do seu prato para análise automática:")
+        img_file = st.camera_input("Capturar foto", key="camera")
+        
+        # Também permite upload
+        uploaded_file = st.file_uploader("Ou faça upload de uma imagem", type=['jpg', 'jpeg', 'png'], key="upload")
+        
+        image_bytes = None
+        if img_file is not None:
+            image_bytes = img_file.getvalue()
+        elif uploaded_file is not None:
+            image_bytes = uploaded_file.getvalue()
+        
+        if image_bytes:
+            st.image(image_bytes, caption="Imagem para análise", use_container_width=True)
+    
+    with tab2:
+        description_input = st.text_area(
+            "Descreva sua refeição",
+            placeholder="Ex: 1 prato de arroz, 100g de frango grelhado, salada de alface com tomate",
+            height=100,
+            key="desc_input"
+        )
+    
+    st.divider()
+    
+    # Informações adicionais
+    col1, col2 = st.columns(2)
+    with col1:
+        meal_type = st.selectbox(
+            "Tipo de refeição",
+            ["breakfast", "lunch", "dinner", "snack"],
+            format_func=lambda x: {
+                "breakfast": "☀️ Café da manhã",
+                "lunch": "🌤️ Almoço", 
+                "dinner": "🌙 Jantar",
+                "snack": "🍪 Lanche"
+            }.get(x, x),
+            key="meal_type"
+        )
+    with col2:
+        meal_date = st.date_input("Data", value=date.today(), key="meal_date")
+    
+    # Localização
+    st.divider()
+    lat, lon, location_name = get_location_component()
+    
+    st.divider()
+    
+    # Botão de análise
+    if st.button("🔍 Analisar Refeição", use_container_width=True, type="primary"):
+        nutrients = None
+        
+        # Análise por foto
+        if 'image_bytes' in dir() and image_bytes:
+            with st.spinner("🤖 Analisando imagem com IA..."):
+                nutrients = analyze_meal_photo(image_bytes)
+        # Análise por texto
+        elif description_input:
+            with st.spinner("🔍 Buscando informações nutricionais..."):
+                nutrients = analyze_meal_by_description(description_input)
+        else:
+            st.warning("Por favor, tire uma foto ou descreva sua refeição.")
+            return
+        
+        if nutrients:
+            show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_name)
+        else:
+            st.error("❌ Não foi possível analisar a refeição. Tente novamente ou descreva manualmente.")
+
+def show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_name):
+    """Exibe resultados da análise e salva no banco."""
+    st.success("✅ Análise concluída!")
+    
+    # Exibe descrição identificada
+    if nutrients.get('description'):
+        st.info(f"**Itens identificados:** {nutrients.get('description', 'N/A')}")
+    
+    # Cards com nutrientes
+    st.markdown("### 📊 Informações Nutricionais")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🔥 Calorias", f"{nutrients.get('calories', 0):.1f} kcal")
+    with col2:
+        st.metric("🥩 Proteínas", f"{nutrients.get('protein', 0):.1f} g")
+    with col3:
+        st.metric("🍞 Carboidratos", f"{nutrients.get('carbs', 0):.1f} g")
+    with col4:
+        st.metric("🧈 Gorduras Totais", f"{nutrients.get('fat_total', 0):.1f} g")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🍬 Açúcares", f"{nutrients.get('sugar', 0):.1f} g")
+    with col2:
+        st.metric("🥓 Gordura Saturada", f"{nutrients.get('fat_saturated', 0):.1f} g")
+    with col3:
+        st.metric("🌾 Fibras", f"{nutrients.get('fiber', 0):.1f} g")
+    with col4:
+        st.metric("🧂 Sódio", f"{nutrients.get('sodium', 0):.1f} mg")
+    
+    # Salvar automaticamente
+    meal = MealData(
+        user_id=st.session_state.user_id,
+        date=meal_date,
+        meal_type=meal_type,
+        calories=nutrients.get('calories', 0),
+        protein=nutrients.get('protein', 0),
+        fat_total=nutrients.get('fat_total', 0),
+        fat_saturated=nutrients.get('fat_saturated', 0),
+        carbs=nutrients.get('carbs', 0),
+        sugar=nutrients.get('sugar', 0),
+        fiber=nutrients.get('fiber', 0),
+        sodium=nutrients.get('sodium', 0),
+        potassium=nutrients.get('potassium', 0),
+        cholesterol=nutrients.get('cholesterol', 0),
+        description=nutrients.get('description', ''),
+        latitude=lat if lat != 0 else None,
+        longitude=lon if lon != 0 else None,
+        location_name=location_name if location_name else None
+    )
+    
+    meal_id = save_meal(meal)
+    st.success(f"💾 Refeição salva com sucesso! (ID: {meal_id})")
+
+def show_daily_summary():
+    """Exibe resumo diário de nutrientes."""
+    st.markdown("## 📊 Resumo Diário")
+    
+    selected_date = st.date_input("Selecione a data", value=date.today(), key="summary_date")
+    
+    macros = get_daily_macros(st.session_state.user_id, selected_date)
+    
+    st.markdown(f"### Consumo em {selected_date.strftime('%d/%m/%Y')}")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🔥 Calorias", f"{macros.get('calories', 0):.1f} kcal")
+    with col2:
+        st.metric("🥩 Proteínas", f"{macros.get('protein', 0):.1f} g")
+    with col3:
+        st.metric("🍞 Carboidratos", f"{macros.get('carbs', 0):.1f} g")
+    with col4:
+        st.metric("🧈 Gorduras", f"{macros.get('fat_total', 0):.1f} g")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🍬 Açúcares", f"{macros.get('sugar', 0):.1f} g")
+    with col2:
+        st.metric("🥓 Gord. Saturada", f"{macros.get('fat_saturated', 0):.1f} g")
+    with col3:
+        st.metric("🌾 Fibras", f"{macros.get('fiber', 0):.1f} g")
+    
+    # Resumo semanal
+    st.divider()
+    st.markdown("### 📈 Resumo da Semana")
+    
+    end_date = date.today()
+    start_date = end_date - timedelta(days=7)
+    
+    weekly_macros = get_aggregated_macros(st.session_state.user_id, start_date, end_date)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Total da semana:**")
+        st.write(f"- Calorias: {weekly_macros.get('calories', 0):.1f} kcal")
+        st.write(f"- Proteínas: {weekly_macros.get('protein', 0):.1f} g")
+        st.write(f"- Carboidratos: {weekly_macros.get('carbs', 0):.1f} g")
+    with col2:
+        st.markdown("**Média diária:**")
+        st.write(f"- Calorias: {weekly_macros.get('calories', 0)/7:.1f} kcal")
+        st.write(f"- Proteínas: {weekly_macros.get('protein', 0)/7:.1f} g")
+        st.write(f"- Carboidratos: {weekly_macros.get('carbs', 0)/7:.1f} g")
+
+def show_history():
+    """Exibe histórico de refeições."""
+    st.markdown("## 📈 Histórico de Refeições")
+    
+    meals = get_user_meals(st.session_state.user_id, limit=100)
+    
+    if not meals:
+        st.info("Nenhuma refeição registrada ainda.")
+        return
+    
+    # Converter para DataFrame
+    df = pd.DataFrame(meals)
+    df['date'] = pd.to_datetime(df['date']).dt.strftime('%d/%m/%Y')
+    df['created_at'] = pd.to_datetime(df['created_at']).dt.strftime('%d/%m/%Y %H:%M')
+    
+    # Mapear tipos de refeição
+    meal_type_map = {
+        "breakfast": "☀️ Café da manhã",
+        "lunch": "🌤️ Almoço", 
+        "dinner": "🌙 Jantar",
+        "snack": "🍪 Lanche"
+    }
+    df['meal_type'] = df['meal_type'].map(meal_type_map)
+    
+    # Selecionar colunas para exibição
+    display_df = df[[
+        'date', 'meal_type', 'description', 'calories', 'protein', 
+        'carbs', 'fat_total', 'sugar', 'location_name'
+    ]].rename(columns={
+        'date': 'Data',
+        'meal_type': 'Refeição',
+        'description': 'Descrição',
+        'calories': 'Calorias',
+        'protein': 'Proteínas (g)',
+        'carbs': 'Carboidratos (g)',
+        'fat_total': 'Gorduras (g)',
+        'sugar': 'Açúcares (g)',
+        'location_name': 'Local'
+    })
+    
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    
+    # Opção de excluir
+    st.divider()
+    st.markdown("### 🗑️ Excluir Refeição")
+    meal_ids = [m['id'] for m in meals]
+    meal_options = [f"ID {m['id']} - {m['date']} - {m['description'][:30] if m['description'] else 'Sem descrição'}..." for m in meals]
+    
+    selected_meal = st.selectbox("Selecione a refeição para excluir", options=range(len(meal_options)), format_func=lambda x: meal_options[x])
+    
+    if st.button("🗑️ Excluir", type="secondary"):
+        if delete_meal(meal_ids[selected_meal], st.session_state.user_id):
+            st.success("Refeição excluída com sucesso!")
+            st.rerun()
+        else:
+            st.error("Erro ao excluir refeição.")
+
+def show_map():
+    """Exibe mapa com localizações das refeições."""
+    st.markdown("## 🗺️ Mapa de Refeições")
+    
+    meals = get_meals_with_location(st.session_state.user_id)
+    
+    if not meals:
+        st.info("Nenhuma refeição com localização registrada. Adicione latitude e longitude ao registrar suas refeições!")
+        return
+    
+    # Preparar dados para o mapa
+    map_data = pd.DataFrame([{
+        'lat': m['latitude'],
+        'lon': m['longitude'],
+        'location': m['location_name'] or 'Local não nomeado',
+        'date': m['date'].strftime('%d/%m/%Y') if hasattr(m['date'], 'strftime') else str(m['date']),
+        'calories': m['calories'],
+        'description': m['description'][:50] if m['description'] else 'Sem descrição'
+    } for m in meals if m['latitude'] and m['longitude']])
+    
+    if map_data.empty:
+        st.info("Nenhuma refeição com coordenadas válidas.")
+        return
+    
+    st.map(map_data, latitude='lat', longitude='lon', size=100, color='#2E7D32')
+    
+    # Lista de locais
+    st.divider()
+    st.markdown("### 📍 Detalhes dos Locais")
+    
+    for meal in meals:
+        if meal['latitude'] and meal['longitude']:
+            with st.expander(f"📍 {meal['location_name'] or 'Local'} - {meal['date']}"):
+                st.write(f"**Descrição:** {meal['description'] or 'N/A'}")
+                st.write(f"**Calorias:** {meal['calories']:.1f} kcal")
+                st.write(f"**Coordenadas:** {meal['latitude']:.6f}, {meal['longitude']:.6f}")
+                
+                # Link para Google Maps
+                maps_url = f"https://www.google.com/maps?q={meal['latitude']},{meal['longitude']}"
+                st.markdown(f"[🗺️ Abrir no Google Maps]({maps_url})")
+
+# Main app
+def main():
+    init_session_state()
+    
+    if not st.session_state.logged_in:
+        show_login_page()
+    else:
+        page = show_sidebar()
+        
+        if page == "📸 Nova Análise":
+            show_analysis_page()
+        elif page == "📊 Resumo Diário":
+            show_daily_summary()
+        elif page == "📈 Histórico":
+            show_history()
+        elif page == "🗺️ Mapa de Refeições":
+            show_map()
+
+if __name__ == "__main__":
+    main()

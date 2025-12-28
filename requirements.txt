@@ -1,6 +1,18 @@
-streamlit
-requests
-PyJWT
-Werkzeug
-sqlalchemy
-pymysql
+# Core
+streamlit>=1.28.0
+requests>=2.31.0
+
+# Authentication
+PyJWT>=2.8.0
+Werkzeug>=3.0.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+pymysql>=1.1.0
+
+# Data processing
+pandas>=2.0.0
+
+# Production server
+gunicorn>=21.0.0

@@ -1,0 +1,38 @@
+# Digital Ocean App Platform Spec
+# https://docs.digitalocean.com/products/app-platform/reference/app-spec/
+
+name: caloria-app
+
+services:
+  - name: web
+    github:
+      repo: <seu-usuario>/<seu-repositorio>
+      branch: main
+      deploy_on_push: true
+    build_command: pip install -r requirements.txt
+    run_command: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    environment_slug: python
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    
+    envs:
+      - key: PERPLEXITY_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: CALORIENINJAS_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+
+databases:
+  - name: caloria-db
+    engine: PG
+    version: "15"
+    size: db-s-dev-database
+    num_nodes: 1
