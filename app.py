@@ -9,13 +9,30 @@ from storage import (
     get_user_by_username, get_user_meals, get_meals_with_location, delete_meal
 )
 from db import init_db
-from backup import (
-    export_to_json, import_from_json, list_backups, delete_backup,
-    mysql_dump, mysql_restore, quick_backup
-)
-from reports import generate_pdf_report, get_period_dates, get_report_filename
 import json
 import os
+
+# Importações opcionais com fallback (para evitar erro se reportlab não estiver instalado)
+BACKUP_AVAILABLE = False
+BACKUP_ERROR = None
+try:
+    from backup import (
+        export_to_json, import_from_json, list_backups, delete_backup,
+        mysql_dump, mysql_restore, quick_backup
+    )
+    BACKUP_AVAILABLE = True
+except Exception as e:
+    BACKUP_ERROR = str(e)
+    print(f"Módulo backup não disponível: {e}")
+
+REPORTS_AVAILABLE = False
+REPORTS_ERROR = None
+try:
+    from reports import generate_pdf_report, get_period_dates, get_report_filename
+    REPORTS_AVAILABLE = True
+except Exception as e:
+    REPORTS_ERROR = str(e)
+    print(f"Módulo reports não disponível: {e}")
 
 # Configuração da página
 st.set_page_config(
@@ -141,9 +158,36 @@ def show_sidebar():
         
         page = st.radio(
             "Navegação",
-            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "� Relatórios", "�💾 Backup/Restore"],
+            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "📄 Relatórios", "💾 Backup/Restore"],
             label_visibility="collapsed"
         )
+        
+        st.divider()
+        
+        # Status das APIs
+        with st.expander("🔧 Status do Sistema", expanded=False):
+            perplexity_key = os.getenv('PERPLEXITY_API_KEY')
+            calorieninjas_key = os.getenv('CALORIENINJAS_API_KEY')
+            
+            if perplexity_key:
+                st.success("✅ Perplexity API")
+            else:
+                st.error("❌ Perplexity API")
+            
+            if calorieninjas_key:
+                st.success("✅ CalorieNinjas API")
+            else:
+                st.error("❌ CalorieNinjas API")
+            
+            if BACKUP_AVAILABLE:
+                st.success("✅ Módulo Backup")
+            else:
+                st.warning(f"⚠️ Backup: {BACKUP_ERROR or 'N/A'}")
+            
+            if REPORTS_AVAILABLE:
+                st.success("✅ Módulo Relatórios")
+            else:
+                st.warning(f"⚠️ Reports: {REPORTS_ERROR or 'N/A'}")
         
         st.divider()
         if st.button("🚪 Sair", use_container_width=True):
@@ -155,9 +199,56 @@ def show_sidebar():
         return page
 
 def get_location_component():
-    """Componente para capturar localização."""
+    """Componente para capturar localização com suporte a geolocalização automática."""
     st.markdown("#### 📍 Localização")
     
+    # JavaScript para obter localização do navegador
+    location_js = """
+    <script>
+    function getLocation() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    // Envia para o Streamlit via query params
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('auto_lat', lat.toFixed(6));
+                    url.searchParams.set('auto_lon', lon.toFixed(6));
+                    document.getElementById('geo_status').innerHTML = '✅ Localização obtida: ' + lat.toFixed(4) + ', ' + lon.toFixed(4);
+                    // Salva no sessionStorage para persistência
+                    sessionStorage.setItem('geo_lat', lat);
+                    sessionStorage.setItem('geo_lon', lon);
+                },
+                function(error) {
+                    document.getElementById('geo_status').innerHTML = '❌ Erro: ' + error.message;
+                },
+                {enableHighAccuracy: true, timeout: 10000}
+            );
+        } else {
+            document.getElementById('geo_status').innerHTML = '❌ Geolocalização não suportada';
+        }
+    }
+    
+    // Tenta recuperar do sessionStorage
+    window.onload = function() {
+        const savedLat = sessionStorage.getItem('geo_lat');
+        const savedLon = sessionStorage.getItem('geo_lon');
+        if (savedLat && savedLon) {
+            document.getElementById('geo_status').innerHTML = '📍 Usando localização salva: ' + parseFloat(savedLat).toFixed(4) + ', ' + parseFloat(savedLon).toFixed(4);
+        }
+    }
+    </script>
+    <button onclick="getLocation()" style="padding: 8px 16px; background-color: #2E7D32; color: white; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px;">
+        📍 Obter Localização Automática
+    </button>
+    <div id="geo_status" style="font-size: 12px; color: #666; margin-bottom: 10px;"></div>
+    """
+    
+    st.components.v1.html(location_js, height=80)
+    
+    # Campos manuais
+    st.caption("Ou insira manualmente:")
     col1, col2 = st.columns(2)
     with col1:
         lat = st.number_input("Latitude", value=0.0, format="%.6f", key="lat_input")
@@ -165,9 +256,6 @@ def get_location_component():
         lon = st.number_input("Longitude", value=0.0, format="%.6f", key="lon_input")
     
     location_name = st.text_input("Nome do local (opcional)", placeholder="Ex: Restaurante XYZ", key="loc_name")
-    
-    # Dica para obter localização
-    st.caption("💡 Dica: No celular, use apps de GPS para obter sua localização atual.")
     
     return lat, lon, location_name
 
@@ -243,6 +331,12 @@ def show_analysis_page():
             st.warning("Por favor, tire uma foto ou descreva sua refeição.")
             return
         
+        # Verifica se houve erro
+        if nutrients and 'error' in nutrients:
+            st.error(f"❌ {nutrients['error']}")
+            st.info("💡 Dica: Tente descrever os alimentos em inglês com quantidades (ex: '100g chicken breast, 1 cup cooked rice, 50g broccoli')")
+            return
+        
         if nutrients:
             show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_name)
         else:
@@ -254,7 +348,16 @@ def show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_na
     
     # Exibe descrição identificada
     if nutrients.get('description'):
-        st.info(f"**Itens identificados:** {nutrients.get('description', 'N/A')}")
+        st.info(f"**Descrição:** {nutrients.get('description', 'N/A')}")
+    
+    # Se houve tradução, mostra o que foi consultado
+    if nutrients.get('query_sent') and nutrients.get('query_sent') != nutrients.get('description'):
+        with st.expander("🔄 Ver tradução para consulta"):
+            st.caption(f"Consulta enviada à API: *{nutrients.get('query_sent')}*")
+    
+    # Mostra itens encontrados na base de dados
+    if nutrients.get('items_detected'):
+        st.caption(f"🍽️ Itens encontrados: {', '.join(nutrients.get('items_detected', []))}")
     
     # Cards com nutrientes
     st.markdown("### 📊 Informações Nutricionais")
@@ -454,6 +557,13 @@ def show_backup_page():
     """Página de backup e restore do banco de dados."""
     st.markdown("## 💾 Backup e Restore")
     
+    if not BACKUP_AVAILABLE:
+        st.error("⚠️ Módulo de backup não disponível.")
+        if BACKUP_ERROR:
+            st.code(BACKUP_ERROR, language="text")
+        st.info("Execute: `pip install -r requirements.txt`")
+        return
+    
     tab1, tab2, tab3 = st.tabs(["📤 Criar Backup", "📥 Restaurar Backup", "📋 Gerenciar Backups"])
     
     with tab1:
@@ -611,6 +721,13 @@ def show_backup_page():
 def show_reports_page():
     """Página de geração de relatórios PDF."""
     st.markdown("## 📄 Relatórios Nutricionais")
+    
+    if not REPORTS_AVAILABLE:
+        st.error("⚠️ Módulo de relatórios não disponível.")
+        if REPORTS_ERROR:
+            st.code(REPORTS_ERROR, language="text")
+        st.info("Execute: `pip install reportlab`")
+        return
     
     st.info("🤖 Os relatórios incluem análise nutricional gerada por IA (Perplexity) com recomendações personalizadas.")
     
