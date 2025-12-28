@@ -3,7 +3,6 @@ import datetime
 import os
 from typing import Optional
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask import request
 
 def get_secret_key() -> str:
     """
@@ -40,10 +39,3 @@ def decode_token(token: str) -> Optional[int]:
         return payload['sub']
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
-
-def get_token_from_header() -> Optional[str]:
-    """Pega token do header Authorization Bearer."""
-    auth_header = request.headers.get('Authorization', None)
-    if auth_header and auth_header.startswith('Bearer '):
-        return auth_header.split(' ')[1]
-    return None
