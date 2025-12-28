@@ -5,13 +5,19 @@ import os
 from datetime import datetime
 
 # Configurar string de conexão via variável ambiente para segurança
-# Prioridade: DATABASE_URL > MYSQL_CONNECTION_STRING > MySQL local padrão
+# Prioridade: DATABASE_URL > MYSQL_CONNECTION_STRING > SQLite local (fallback)
 # Formato MySQL: mysql+pymysql://usuario:senha@host:porta/database
+# Formato PostgreSQL: postgresql://usuario:senha@host:porta/database
+
+# Caminho do banco SQLite local (fallback quando não há variável de ambiente)
+SQLITE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caloria.db')
+DEFAULT_SQLITE_URL = f'sqlite:///{SQLITE_PATH}'
+
 DB_URL = os.getenv(
     'DATABASE_URL', 
     os.getenv(
         'MYSQL_CONNECTION_STRING', 
-        'mysql+pymysql://root:@localhost:3306/caloria'
+        DEFAULT_SQLITE_URL  # Fallback para SQLite local
     )
 )
 
@@ -19,18 +25,25 @@ DB_URL = os.getenv(
 if DB_URL.startswith('postgres://'):
     DB_URL = DB_URL.replace('postgres://', 'postgresql://', 1)
 
-# Configurações extras para MySQL
+# Configurações do engine baseadas no tipo de banco
 engine_kwargs = {
     'pool_pre_ping': True,
-    'pool_recycle': 3600,  # Reconecta após 1 hora
 }
 
-# Adiciona charset para MySQL
-if 'mysql' in DB_URL and 'charset' not in DB_URL:
-    if '?' in DB_URL:
-        DB_URL += '&charset=utf8mb4'
-    else:
-        DB_URL += '?charset=utf8mb4'
+# Configurações específicas por tipo de banco
+if 'sqlite' in DB_URL:
+    # SQLite não suporta pool_recycle e precisa de check_same_thread=False para Streamlit
+    engine_kwargs['connect_args'] = {'check_same_thread': False}
+elif 'mysql' in DB_URL:
+    engine_kwargs['pool_recycle'] = 3600  # Reconecta após 1 hora
+    # Adiciona charset para MySQL
+    if 'charset' not in DB_URL:
+        if '?' in DB_URL:
+            DB_URL += '&charset=utf8mb4'
+        else:
+            DB_URL += '?charset=utf8mb4'
+elif 'postgresql' in DB_URL:
+    engine_kwargs['pool_recycle'] = 3600
 
 engine = create_engine(DB_URL, **engine_kwargs)
 Session = sessionmaker(bind=engine)
