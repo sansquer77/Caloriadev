@@ -325,7 +325,7 @@ def show_analysis_page():
                 nutrients = analyze_meal_photo(image_bytes)
         # Análise por texto
         elif description_input:
-            with st.spinner("🔍 Buscando informações nutricionais..."):
+            with st.spinner("🔍 Traduzindo e buscando informações nutricionais..."):
                 nutrients = analyze_meal_by_description(description_input)
         else:
             st.warning("Por favor, tire uma foto ou descreva sua refeição.")
@@ -334,6 +334,12 @@ def show_analysis_page():
         # Verifica se houve erro
         if nutrients and 'error' in nutrients:
             st.error(f"❌ {nutrients['error']}")
+            
+            # Mostra o que foi enviado à API para debug
+            if nutrients.get('query_sent'):
+                with st.expander("🔍 Ver consulta enviada à API"):
+                    st.code(nutrients['query_sent'], language="text")
+            
             st.info("💡 Dica: Tente descrever os alimentos em inglês com quantidades (ex: '100g chicken breast, 1 cup cooked rice, 50g broccoli')")
             return
         

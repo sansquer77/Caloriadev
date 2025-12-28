@@ -4,6 +4,7 @@ import os
 import json
 import re
 from typing import Optional, Dict
+from urllib.parse import quote
 
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions'
@@ -62,12 +63,29 @@ Responda APENAS com a tradução em inglês, sem explicações adicionais."""
             if 'choices' in result and len(result['choices']) > 0:
                 message = result['choices'][0].get('message', {})
                 translation = message.get('content', '').strip()
-                # Remove aspas se houver
+                
+                # Limpa a resposta - remove aspas, quebras de linha, prefixos comuns
                 translation = translation.strip('"\'')
+                translation = translation.replace('\n', ', ')
+                translation = translation.replace('  ', ' ')
+                
+                # Remove prefixos comuns que a IA pode adicionar
+                prefixes_to_remove = [
+                    'Here is the translation:', 'Translation:', 'In English:',
+                    'The translation is:', 'English:', 'Here\'s the translation:'
+                ]
+                for prefix in prefixes_to_remove:
+                    if translation.lower().startswith(prefix.lower()):
+                        translation = translation[len(prefix):].strip()
+                
+                # Limita o tamanho (CalorieNinjas tem limite)
+                if len(translation) > 1500:
+                    translation = translation[:1500]
+                
                 print(f"Tradução: '{food_description}' → '{translation}'")
                 return translation
         else:
-            print(f"Erro na tradução: {response.status_code}")
+            print(f"Erro na tradução: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"Exceção na tradução: {e}")
     
@@ -139,13 +157,32 @@ def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
         print("Erro: Descrição muito curta")
         return {'error': 'Descrição muito curta. Forneça mais detalhes sobre os alimentos.'}
     
+    # Limpa o texto - remove caracteres problemáticos
+    clean_text = meal_text.strip()
+    clean_text = ' '.join(clean_text.split())  # Remove espaços extras
+    clean_text = clean_text.replace('\n', ' and ').replace('\r', '')
+    
+    # Remove caracteres que não são ASCII básico (emojis, acentos, etc)
+    # CalorieNinjas funciona melhor com ASCII puro
+    clean_text = clean_text.encode('ascii', 'ignore').decode('ascii')
+    clean_text = ' '.join(clean_text.split())  # Remove espaços extras novamente
+    
+    if len(clean_text) < 3:
+        return {'error': 'Descrição inválida após limpeza. Use apenas caracteres simples.'}
+    
+    print(f"CalorieNinjas Query: '{clean_text}'")
+    
     headers = {
         'X-Api-Key': CALORIENINJAS_API_KEY
     }
-    params = {'query': meal_text.strip()}
+    
+    # Usa concatenação direta na URL como na documentação oficial
+    # https://api.calorieninjas.com/v1/nutrition?query=1lb beef
+    url = f"{CALORIENINJAS_API_URL}?query={quote(clean_text)}"
+    print(f"CalorieNinjas URL: {url}")
     
     try:
-        response = requests.get(CALORIENINJAS_API_URL, headers=headers, params=params, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30)
         print(f"CalorieNinjas Status: {response.status_code}")
         
         if response.status_code == 200:
@@ -155,7 +192,7 @@ def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
             
             # Se não encontrou itens, retorna erro específico
             if not items:
-                print(f"Nenhum item encontrado para: {meal_text}")
+                print(f"Nenhum item encontrado para: {clean_text}")
                 return {'error': f'Nenhum alimento encontrado para "{meal_text}". Tente descrever os alimentos de forma diferente (ex: "100g chicken breast, 1 cup rice").'}
             
             # Inicializa todos os nutrientes
@@ -192,9 +229,18 @@ def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
         elif response.status_code == 401:
             print(f"Erro CalorieNinjas API: Autenticação falhou")
             return {'error': 'Chave de API CalorieNinjas inválida. Verifique a configuração.'}
+        elif response.status_code == 400:
+            print(f"Erro CalorieNinjas API 400: {response.text}")
+            return {
+                'error': f'A API não conseguiu processar a consulta. Tente simplificar a descrição.',
+                'query_sent': clean_text
+            }
         else:
             print(f"Erro CalorieNinjas API: {response.status_code} - {response.text}")
-            return {'error': f'Erro na API CalorieNinjas (código {response.status_code}). Tente novamente.'}
+            return {
+                'error': f'Erro na API CalorieNinjas (código {response.status_code}). Tente novamente.',
+                'query_sent': clean_text
+            }
     except requests.exceptions.Timeout:
         print("Timeout na chamada CalorieNinjas API")
         return {'error': 'Timeout na consulta. A API demorou muito para responder. Tente novamente.'}
