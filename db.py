@@ -5,14 +5,34 @@ import os
 from datetime import datetime
 
 # Configurar string de conexão via variável ambiente para segurança
-# Suporta PostgreSQL (Digital Ocean) ou MySQL
-DB_URL = os.getenv('DATABASE_URL', os.getenv('MYSQL_CONNECTION_STRING', 'sqlite:///caloria.db'))
+# Prioridade: DATABASE_URL > MYSQL_CONNECTION_STRING > MySQL local padrão
+# Formato MySQL: mysql+pymysql://usuario:senha@host:porta/database
+DB_URL = os.getenv(
+    'DATABASE_URL', 
+    os.getenv(
+        'MYSQL_CONNECTION_STRING', 
+        'mysql+pymysql://root:@localhost:3306/caloria'
+    )
+)
 
 # Digital Ocean usa 'postgres://' mas SQLAlchemy precisa de 'postgresql://'
 if DB_URL.startswith('postgres://'):
     DB_URL = DB_URL.replace('postgres://', 'postgresql://', 1)
 
-engine = create_engine(DB_URL, pool_pre_ping=True)
+# Configurações extras para MySQL
+engine_kwargs = {
+    'pool_pre_ping': True,
+    'pool_recycle': 3600,  # Reconecta após 1 hora
+}
+
+# Adiciona charset para MySQL
+if 'mysql' in DB_URL and 'charset' not in DB_URL:
+    if '?' in DB_URL:
+        DB_URL += '&charset=utf8mb4'
+    else:
+        DB_URL += '?charset=utf8mb4'
+
+engine = create_engine(DB_URL, **engine_kwargs)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 

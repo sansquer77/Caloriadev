@@ -9,7 +9,13 @@ from storage import (
     get_user_by_username, get_user_meals, get_meals_with_location, delete_meal
 )
 from db import init_db
+from backup import (
+    export_to_json, import_from_json, list_backups, delete_backup,
+    mysql_dump, mysql_restore, quick_backup
+)
+from reports import generate_pdf_report, get_period_dates, get_report_filename
 import json
+import os
 
 # Configuração da página
 st.set_page_config(
@@ -135,7 +141,7 @@ def show_sidebar():
         
         page = st.radio(
             "Navegação",
-            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições"],
+            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "� Relatórios", "�💾 Backup/Restore"],
             label_visibility="collapsed"
         )
         
@@ -444,6 +450,262 @@ def show_map():
                 maps_url = f"https://www.google.com/maps?q={meal['latitude']},{meal['longitude']}"
                 st.markdown(f"[🗺️ Abrir no Google Maps]({maps_url})")
 
+def show_backup_page():
+    """Página de backup e restore do banco de dados."""
+    st.markdown("## 💾 Backup e Restore")
+    
+    tab1, tab2, tab3 = st.tabs(["📤 Criar Backup", "📥 Restaurar Backup", "📋 Gerenciar Backups"])
+    
+    with tab1:
+        st.markdown("### Criar novo backup")
+        st.info("O backup salva todos os usuários e refeições em um arquivo JSON.")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("💾 Criar Backup JSON", use_container_width=True, type="primary"):
+                with st.spinner("Criando backup..."):
+                    try:
+                        filepath = export_to_json()
+                        st.success(f"✅ Backup criado com sucesso!")
+                        st.code(filepath)
+                        
+                        # Oferecer download
+                        with open(filepath, 'r', encoding='utf-8') as f:
+                            backup_content = f.read()
+                        st.download_button(
+                            label="📥 Baixar Backup",
+                            data=backup_content,
+                            file_name=os.path.basename(filepath),
+                            mime="application/json"
+                        )
+                    except Exception as e:
+                        st.error(f"❌ Erro ao criar backup: {str(e)}")
+        
+        with col2:
+            if st.button("🗄️ Criar Backup MySQL (mysqldump)", use_container_width=True):
+                with st.spinner("Executando mysqldump..."):
+                    try:
+                        filepath = mysql_dump()
+                        if filepath:
+                            st.success(f"✅ Dump MySQL criado!")
+                            st.code(filepath)
+                        else:
+                            st.warning("⚠️ mysqldump não disponível ou não é MySQL.")
+                    except Exception as e:
+                        st.error(f"❌ Erro: {str(e)}")
+    
+    with tab2:
+        st.markdown("### Restaurar de backup")
+        st.warning("⚠️ A restauração pode sobrescrever dados existentes. Faça backup antes!")
+        
+        # Upload de arquivo
+        uploaded_file = st.file_uploader(
+            "Selecione o arquivo de backup JSON",
+            type=['json'],
+            key="backup_upload"
+        )
+        
+        clear_existing = st.checkbox(
+            "Limpar dados existentes antes de importar",
+            value=False,
+            help="Se marcado, todos os dados serão removidos antes da importação."
+        )
+        
+        if uploaded_file is not None:
+            # Mostrar preview
+            try:
+                content = json.loads(uploaded_file.getvalue().decode('utf-8'))
+                st.markdown("**Preview do backup:**")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Usuários", content.get('stats', {}).get('total_users', 'N/A'))
+                with col2:
+                    st.metric("Refeições", content.get('stats', {}).get('total_meals', 'N/A'))
+                with col3:
+                    backup_date = content.get('backup_date', {})
+                    if isinstance(backup_date, dict) and '__datetime__' in backup_date:
+                        st.metric("Data", backup_date['__datetime__'][:10])
+                    else:
+                        st.metric("Data", "N/A")
+            except:
+                st.error("Não foi possível ler o arquivo.")
+            
+            if st.button("🔄 Restaurar Backup", type="primary"):
+                with st.spinner("Restaurando..."):
+                    try:
+                        # Salvar arquivo temporário
+                        temp_path = f"/tmp/restore_{datetime.now().strftime('%Y%m%d%H%M%S')}.json"
+                        with open(temp_path, 'wb') as f:
+                            f.write(uploaded_file.getvalue())
+                        
+                        # Importar
+                        stats = import_from_json(temp_path, clear_existing=clear_existing)
+                        
+                        # Remover arquivo temporário
+                        os.remove(temp_path)
+                        
+                        st.success("✅ Restauração concluída!")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Usuários importados", stats['users_imported'])
+                            st.metric("Usuários ignorados", stats['users_skipped'])
+                        with col2:
+                            st.metric("Refeições importadas", stats['meals_imported'])
+                            st.metric("Refeições ignoradas", stats['meals_skipped'])
+                        
+                        if stats['errors']:
+                            st.warning(f"⚠️ {len(stats['errors'])} erros durante importação")
+                            with st.expander("Ver erros"):
+                                for err in stats['errors']:
+                                    st.text(err)
+                    except Exception as e:
+                        st.error(f"❌ Erro na restauração: {str(e)}")
+    
+    with tab3:
+        st.markdown("### Backups salvos")
+        
+        backups = list_backups()
+        
+        if not backups:
+            st.info("Nenhum backup encontrado na pasta de backups.")
+        else:
+            for backup in backups:
+                with st.expander(f"📁 {backup['filename']} ({backup['size_mb']} MB)"):
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.write(f"**Criado em:** {backup['created'].strftime('%d/%m/%Y %H:%M')}")
+                    with col2:
+                        st.write(f"**Usuários:** {backup['total_users']}")
+                    with col3:
+                        st.write(f"**Refeições:** {backup['total_meals']}")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        # Download
+                        with open(backup['filepath'], 'r', encoding='utf-8') as f:
+                            st.download_button(
+                                "📥 Download",
+                                data=f.read(),
+                                file_name=backup['filename'],
+                                mime="application/json",
+                                key=f"dl_{backup['filename']}"
+                            )
+                    with col2:
+                        # Restaurar
+                        if st.button("🔄 Restaurar", key=f"restore_{backup['filename']}"):
+                            try:
+                                stats = import_from_json(backup['filepath'])
+                                st.success(f"Restaurado! {stats['users_imported']} usuários, {stats['meals_imported']} refeições")
+                            except Exception as e:
+                                st.error(f"Erro: {str(e)}")
+                    with col3:
+                        # Excluir
+                        if st.button("🗑️ Excluir", key=f"del_{backup['filename']}"):
+                            if delete_backup(backup['filepath']):
+                                st.success("Backup excluído!")
+                                st.rerun()
+                            else:
+                                st.error("Erro ao excluir.")
+
+def show_reports_page():
+    """Página de geração de relatórios PDF."""
+    st.markdown("## 📄 Relatórios Nutricionais")
+    
+    st.info("🤖 Os relatórios incluem análise nutricional gerada por IA (Perplexity) com recomendações personalizadas.")
+    
+    # Configurações do relatório
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        period = st.selectbox(
+            "Período do relatório",
+            ["day", "week", "month", "year"],
+            format_func=lambda x: {
+                "day": "📅 Diário",
+                "week": "📆 Semanal",
+                "month": "🗓️ Mensal",
+                "year": "📊 Anual"
+            }.get(x, x),
+            index=1,
+            key="report_period"
+        )
+    
+    with col2:
+        reference_date = st.date_input(
+            "Data de referência",
+            value=date.today(),
+            key="report_date"
+        )
+    
+    # Mostrar período selecionado
+    start_date, end_date = get_period_dates(period, reference_date)
+    st.markdown(f"**Período selecionado:** {start_date.strftime('%d/%m/%Y')} a {end_date.strftime('%d/%m/%Y')}")
+    
+    st.divider()
+    
+    # Opções do relatório
+    include_ai = st.checkbox(
+        "🤖 Incluir análise de IA",
+        value=True,
+        help="Gera uma análise nutricional personalizada usando Perplexity AI"
+    )
+    
+    st.divider()
+    
+    # Botão de geração
+    if st.button("📄 Gerar Relatório PDF", type="primary", use_container_width=True):
+        with st.spinner("📝 Gerando relatório... Isso pode levar alguns segundos."):
+            try:
+                # Gerar PDF
+                pdf_bytes = generate_pdf_report(
+                    user_id=st.session_state.user_id,
+                    period=period,
+                    reference_date=reference_date,
+                    include_ai_analysis=include_ai
+                )
+                
+                # Nome do arquivo
+                filename = get_report_filename(period, start_date, end_date)
+                
+                st.success("✅ Relatório gerado com sucesso!")
+                
+                # Botão de download
+                st.download_button(
+                    label="📥 Baixar Relatório PDF",
+                    data=pdf_bytes,
+                    file_name=filename,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Erro ao gerar relatório: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+    
+    st.divider()
+    
+    # Preview rápido dos dados
+    st.markdown("### 👁️ Preview dos Dados")
+    
+    macros = get_aggregated_macros(st.session_state.user_id, start_date, end_date)
+    days = (end_date - start_date).days + 1
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("🔥 Calorias Total", f"{macros.get('calories', 0):.0f} kcal")
+        st.metric("🔥 Média/dia", f"{macros.get('calories', 0)/days:.0f} kcal")
+    with col2:
+        st.metric("🥩 Proteínas Total", f"{macros.get('protein', 0):.1f}g")
+        st.metric("🥩 Média/dia", f"{macros.get('protein', 0)/days:.1f}g")
+    with col3:
+        st.metric("🍞 Carboidratos Total", f"{macros.get('carbs', 0):.1f}g")
+        st.metric("🍞 Média/dia", f"{macros.get('carbs', 0)/days:.1f}g")
+    with col4:
+        st.metric("🧈 Gorduras Total", f"{macros.get('fat_total', 0):.1f}g")
+        st.metric("🧈 Média/dia", f"{macros.get('fat_total', 0)/days:.1f}g")
+
 # Main app
 def main():
     init_session_state()
@@ -461,6 +723,10 @@ def main():
             show_history()
         elif page == "🗺️ Mapa de Refeições":
             show_map()
+        elif page == "📄 Relatórios":
+            show_reports_page()
+        elif page == "💾 Backup/Restore":
+            show_backup_page()
 
 if __name__ == "__main__":
     main()

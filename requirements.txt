@@ -14,5 +14,8 @@ pymysql>=1.1.0
 # Data processing
 pandas>=2.0.0
 
+# PDF Generation
+reportlab>=4.0.0
+
 # Production server
 gunicorn>=21.0.0
