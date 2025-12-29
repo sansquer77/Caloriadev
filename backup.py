@@ -7,7 +7,7 @@ import json
 import os
 from datetime import datetime, date
 from typing import Optional, Dict, List
-from db import get_session, User, Meal, init_db, DB_URL
+from db import get_session, User, Meal, init_db, DATABASE_URL, SQLITE_PATH
 import subprocess
 import shutil
 
@@ -99,7 +99,7 @@ def export_to_json(filepath: Optional[str] = None) -> str:
         # Montar dados completos
         backup_data = {
             'backup_date': datetime.now(),
-            'database_url': DB_URL.split('@')[-1] if '@' in DB_URL else 'local',  # Não expor credenciais
+            'database_url': DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else 'local',  # Não expor credenciais
             'users': users_data,
             'meals': meals_data,
             'stats': {
@@ -303,14 +303,14 @@ def mysql_dump(output_file: Optional[str] = None) -> Optional[str]:
         Caminho do arquivo criado ou None em caso de erro.
     """
     # Extrair configurações da URL
-    if 'mysql' not in DB_URL:
+    if 'mysql' not in DATABASE_URL:
         return None
     
     try:
         # Parse da URL: mysql+pymysql://user:pass@host:port/database
         import re
         pattern = r'mysql\+pymysql://([^:]+):([^@]*)@([^:]+):(\d+)/([^?]+)'
-        match = re.match(pattern, DB_URL)
+        match = re.match(pattern, DATABASE_URL)
         
         if not match:
             return None
@@ -350,13 +350,13 @@ def mysql_restore(sql_file: str) -> bool:
     Returns:
         True se restaurado com sucesso.
     """
-    if 'mysql' not in DB_URL:
+    if 'mysql' not in DATABASE_URL:
         return False
     
     try:
         import re
         pattern = r'mysql\+pymysql://([^:]+):([^@]*)@([^:]+):(\d+)/([^?]+)'
-        match = re.match(pattern, DB_URL)
+        match = re.match(pattern, DATABASE_URL)
         
         if not match:
             return False
