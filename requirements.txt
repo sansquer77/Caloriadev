@@ -26,6 +26,7 @@ python-dotenv>=1.0.0
 # Security
 PyJWT>=2.8.0
 bcrypt>=4.1.0
+werkzeug>=3.0.0  # Para hashing seguro de senhas (PBKDF2)
 
 # JSON
 jsonschema>=4.20.0
