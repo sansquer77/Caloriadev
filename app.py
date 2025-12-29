@@ -205,7 +205,7 @@ def show_sidebar():
         
         page = st.radio(
             "Navegação",
-            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "📄 Relatórios", "� Meu Perfil", "�💾 Backup/Restore"],
+            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "📄 Relatórios", "👤 Meu Perfil", "💾 Backup/Restore"],
             label_visibility="collapsed"
         )
         
@@ -1178,9 +1178,9 @@ def main():
             show_map()
         elif page == "📄 Relatórios":
             show_reports_page()
-        elif page == "� Meu Perfil":
+        elif page == "👤 Meu Perfil":
             show_profile_page()
-        elif page == "�💾 Backup/Restore":
+        elif page == "💾 Backup/Restore":
             show_backup_page()
 
 if __name__ == "__main__":
