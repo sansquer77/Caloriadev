@@ -14,8 +14,11 @@ from db import init_db, SessionLocal, User, Meal, MealItem
 from api_perplexity import analyze_meal_by_description
 from meal_parser import parse_and_analyze_meal
 from nutrition_analysis import get_nutrition_analysis, compare_with_recommendations
-from off_cache_manager import add_to_cache, get_from_cache
-import json
+import logging
+
+# Configuração de logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Configuração
 st.set_page_config(
@@ -44,7 +47,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Inicializar DB
-init_db()
+try:
+    init_db()
+except Exception as e:
+    logger.error(f"Erro ao inicializar banco de dados: {e}")
+    st.error(f"Erro ao inicializar banco de dados: {e}")
 
 # State session
 if 'user_id' not in st.session_state:
@@ -143,11 +150,14 @@ if page == "Registrar Refeição":
                     if st.button("💾 Salvar Refeição", use_container_width=True):
                         db = SessionLocal()
                         try:
+                            # Normalizar meal_type
+                            meal_type_normalized = meal_type.lower().replace("ã", "a").replace(" ", "_").replace("da_manha", "breakfast").replace("almoco", "lunch").replace("lanche", "snack").replace("jantar", "dinner")
+                            
                             # Criar refeição
                             meal = Meal(
                                 user_id=st.session_state.user_id,
                                 date=meal_date.strftime('%Y-%m-%d'),
-                                meal_type=meal_type.lower().replace(" da manhã", "_breakfast"),
+                                meal_type=meal_type_normalized,
                                 description=meal_description,
                                 location_name=location or None,
                                 calories=totals.get('calories', 0),
@@ -190,6 +200,7 @@ if page == "Registrar Refeição":
                             st.session_state.last_analysis = None  # Limpar
                         
                         except Exception as e:
+                            logger.error(f"Erro ao salvar refeição: {e}")
                             st.error(f"⚠️ Erro ao salvar: {e}")
                         finally:
                             db.close()
@@ -211,55 +222,61 @@ elif page == "Histórico":
     with col3:
         meal_filter = st.multiselect(
             "Tipo de Refeição",
-            ["Café da manhã", "Almoço", "Lanche", "Jantar"],
-            default=["Café da manhã", "Almoço", "Lanche", "Jantar"]
+            ["breakfast", "lunch", "snack", "dinner"],
+            default=["breakfast", "lunch", "snack", "dinner"]
         )
     
     # Buscar dados
     db = SessionLocal()
-    meals = db.query(Meal).filter(
-        Meal.user_id == st.session_state.user_id,
-        Meal.date >= start_date.strftime('%Y-%m-%d'),
-        Meal.date <= end_date.strftime('%Y-%m-%d')
-    ).all()
+    try:
+        meals = db.query(Meal).filter(
+            Meal.user_id == st.session_state.user_id,
+            Meal.date >= start_date.strftime('%Y-%m-%d'),
+            Meal.date <= end_date.strftime('%Y-%m-%d')
+        ).all()
+        
+        if meals:
+            # Montar DataFrame
+            data = []
+            for meal in meals:
+                data.append({
+                    'Data': meal.date,
+                    'Refeição': meal.meal_type.title(),
+                    'Descrição': meal.description[:50] + '...' if len(meal.description) > 50 else meal.description,
+                    'Calorias': meal.calories,
+                    'Proteínas (g)': meal.protein,
+                    'Carboidratos (g)': meal.carbs,
+                    'Fibras (g)': meal.fiber,
+                    'Açúcares (g)': meal.sugar,
+                    'Local': meal.location_name or '-'
+                })
+            
+            df = pd.DataFrame(data)
+            st.dataframe(df, use_container_width=True)
+            
+            # Resumo rápido
+            st.markdown("### 📊 Resumo do Período")
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            with col1:
+                st.metric("🔥 Calorias Total", f"{df['Calorias'].sum():.0f}")
+            with col2:
+                st.metric("🥩 Proteínas", f"{df['Proteínas (g)'].sum():.1f}g")
+            with col3:
+                st.metric("🍞 Carboidratos", f"{df['Carboidratos (g)'].sum():.1f}g")
+            with col4:
+                st.metric("🌾 Fibras", f"{df['Fibras (g)'].sum():.1f}g")
+            with col5:
+                st.metric("💪 Refeições", len(df))
+        else:
+            st.info("📄 Nenhuma refeição registrada no período selecionado")
     
-    if meals:
-        # Montar DataFrame
-        data = []
-        for meal in meals:
-            data.append({
-                'Data': meal.date,
-                'Refeição': meal.meal_type.title(),
-                'Descrição': meal.description[:50] + '...' if len(meal.description) > 50 else meal.description,
-                'Calorias': meal.calories,
-                'Proteínas (g)': meal.protein,
-                'Carboidratos (g)': meal.carbs,
-                'Fibras (g)': meal.fiber,
-                'Açúcares (g)': meal.sugar,
-                'Local': meal.location_name or '-'
-            })
-        
-        df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True)
-        
-        # Resumo rápido
-        st.markdown("### 📊 Resumo do Período")
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        with col1:
-            st.metric("🔥 Calorias Total", f"{df['Calorias'].sum():.0f}")
-        with col2:
-            st.metric("🥩 Proteínas", f"{df['Proteínas (g)'].sum():.1f}g")
-        with col3:
-            st.metric("🍞 Carboidratos", f"{df['Carboidratos (g)'].sum():.1f}g")
-        with col4:
-            st.metric("🌾 Fibras", f"{df['Fibras (g)'].sum():.1f}g")
-        with col5:
-            st.metric("💪 Refeições", len(df))
-    else:
-        st.info("📄 Nenhuma refeição registrada no período selecionado")
+    except Exception as e:
+        logger.error(f"Erro ao buscar histórico: {e}")
+        st.error(f"Erro ao buscar histórico: {e}")
     
-    db.close()
+    finally:
+        db.close()
 
 
 # ===================== PÁGINA: RELATÓRIOS =====================
@@ -284,98 +301,113 @@ elif page == "Relatórios":
     
     # Buscar dados
     db = SessionLocal()
-    meals = db.query(Meal).filter(
-        Meal.user_id == st.session_state.user_id,
-        Meal.date >= start_date.strftime('%Y-%m-%d'),
-        Meal.date <= end_date.strftime('%Y-%m-%d')
-    ).all()
-    
-    if meals:
-        # Calcular agregados
-        days_count = (end_date - start_date).days + 1
+    try:
+        meals = db.query(Meal).filter(
+            Meal.user_id == st.session_state.user_id,
+            Meal.date >= start_date.strftime('%Y-%m-%d'),
+            Meal.date <= end_date.strftime('%Y-%m-%d')
+        ).all()
         
-        period_data = {
-            'days_count': days_count,
-            'meals_count': len(meals),
-            'calories': sum(m.calories for m in meals),
-            'protein': sum(m.protein for m in meals),
-            'carbs': sum(m.carbs for m in meals),
-            'sugar': sum(m.sugar for m in meals),
-            'fiber': sum(m.fiber for m in meals),
-            'fat_total': sum(m.fat_total for m in meals),
-            'fat_saturated': sum(m.fat_saturated for m in meals),
-            'sodium': sum(m.sodium for m in meals),
-            'potassium': sum(m.potassium for m in meals),
-            'cholesterol': sum(m.cholesterol for m in meals)
-        }
-        
-        # Exibir métricas
-        st.markdown(f"### 📋 Resumo {period_name}")
-        
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        with col1:
-            st.metric(
-                "🔥 Calorias",
-                f"{period_data['calories']/days_count:.0f} kcal/dia",
-                delta=f"Total: {period_data['calories']:.0f}"
-            )
-        with col2:
-            st.metric(
-                "🥩 Proteínas",
-                f"{period_data['protein']/days_count:.1f}g/dia",
-                delta=f"Total: {period_data['protein']:.1f}g"
-            )
-        with col3:
-            st.metric(
-                "🍞 Carboidratos",
-                f"{period_data['carbs']/days_count:.1f}g/dia",
-                delta=f"Total: {period_data['carbs']:.1f}g"
-            )
-        with col4:
-            st.metric(
-                "🌾 Fibras",
-                f"{period_data['fiber']/days_count:.1f}g/dia",
-                delta=f"Total: {period_data['fiber']:.1f}g"
-            )
-        with col5:
-            st.metric(
-                "📚 Açúcares",
-                f"{period_data['sugar']/days_count:.1f}g/dia",
-                delta=f"Total: {period_data['sugar']:.1f}g"
-            )
-        
-        # ANÁLISE COM PERPLEXITY (apenas semanal/mensal)
-        st.markdown(f"### 🦪 Análise Nutricional - {period_name}")
-        
-        with st.spinner("🔍 Gerando análise nutricional..."):
-            analysis = get_nutrition_analysis(period_data, period_type.lower())
-            st.markdown(analysis)
-        
-        # Comparação com recomendações
-        st.markdown("### 🎨 Comparação com Recomendações")
-        
-        comparison = compare_with_recommendations(period_data)
-        
-        comp_data = []
-        for nutrient, data in comparison.items():
-            status_emoji = "✅" if data['status'] in ['excellent', 'good'] else "🙋" if data['status'] == 'moderate' else "⚠️"
+        if meals:
+            # Calcular agregados
+            days_count = (end_date - start_date).days + 1
             
-            comp_data.append({
-                'Nutriente': nutrient.replace('_', ' ').title(),
-                'Valor': f"{data['value']:.1f}",
-                'Meta': f"{data['target']:.1f}",
-                'Percentual': f"{data['percentage']:.0f}%",
-                'Status': status_emoji
-            })
-        
-        comp_df = pd.DataFrame(comp_data)
-        st.dataframe(comp_df, use_container_width=True)
-        
-    else:
-        st.info("📄 Nenhuma refeição registrada no período selecionado")
+            period_data = {
+                'days_count': days_count,
+                'meals_count': len(meals),
+                'calories': sum(m.calories for m in meals),
+                'protein': sum(m.protein for m in meals),
+                'carbs': sum(m.carbs for m in meals),
+                'sugar': sum(m.sugar for m in meals),
+                'fiber': sum(m.fiber for m in meals),
+                'fat_total': sum(m.fat_total for m in meals),
+                'fat_saturated': sum(m.fat_saturated for m in meals),
+                'sodium': sum(m.sodium for m in meals),
+                'potassium': sum(m.potassium for m in meals),
+                'cholesterol': sum(m.cholesterol for m in meals)
+            }
+            
+            # Exibir métricas
+            st.markdown(f"### 📋 Resumo {period_name}")
+            
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            with col1:
+                st.metric(
+                    "🔥 Calorias",
+                    f"{period_data['calories']/days_count:.0f} kcal/dia",
+                    delta=f"Total: {period_data['calories']:.0f}"
+                )
+            with col2:
+                st.metric(
+                    "🥩 Proteínas",
+                    f"{period_data['protein']/days_count:.1f}g/dia",
+                    delta=f"Total: {period_data['protein']:.1f}g"
+                )
+            with col3:
+                st.metric(
+                    "🍞 Carboidratos",
+                    f"{period_data['carbs']/days_count:.1f}g/dia",
+                    delta=f"Total: {period_data['carbs']:.1f}g"
+                )
+            with col4:
+                st.metric(
+                    "🌾 Fibras",
+                    f"{period_data['fiber']/days_count:.1f}g/dia",
+                    delta=f"Total: {period_data['fiber']:.1f}g"
+                )
+            with col5:
+                st.metric(
+                    "📚 Açúcares",
+                    f"{period_data['sugar']/days_count:.1f}g/dia",
+                    delta=f"Total: {period_data['sugar']:.1f}g"
+                )
+            
+            # ANÁLISE COM PERPLEXITY (apenas semanal/mensal)
+            st.markdown(f"### 🦪 Análise Nutricional - {period_name}")
+            
+            with st.spinner("🔍 Gerando análise nutricional..."):
+                try:
+                    analysis = get_nutrition_analysis(period_data, period_type.lower())
+                    st.markdown(analysis)
+                except Exception as e:
+                    logger.error(f"Erro ao gerar análise: {e}")
+                    st.warning(f"Não foi possível gerar análise: {e}")
+            
+            # Comparação com recomendações
+            st.markdown("### 🎨 Comparação com Recomendações")
+            
+            try:
+                comparison = compare_with_recommendations(period_data)
+                
+                comp_data = []
+                for nutrient, data in comparison.items():
+                    status_emoji = "✅" if data['status'] in ['excellent', 'good'] else "🙋" if data['status'] == 'moderate' else "⚠️"
+                    
+                    comp_data.append({
+                        'Nutriente': nutrient.replace('_', ' ').title(),
+                        'Valor': f"{data['value']:.1f}",
+                        'Meta': f"{data['target']:.1f}",
+                        'Percentual': f"{data['percentage']:.0f}%",
+                        'Status': status_emoji
+                    })
+                
+                comp_df = pd.DataFrame(comp_data)
+                st.dataframe(comp_df, use_container_width=True)
+            
+            except Exception as e:
+                logger.error(f"Erro ao comparar com recomendações: {e}")
+                st.warning(f"Não foi possível gerar comparação: {e}")
+            
+        else:
+            st.info("📄 Nenhuma refeição registrada no período selecionado")
     
-    db.close()
+    except Exception as e:
+        logger.error(f"Erro ao gerar relatório: {e}")
+        st.error(f"Erro ao gerar relatório: {e}")
+    
+    finally:
+        db.close()
 
 
 # ===================== PÁGINA: CONFIGURAÇÕES =====================
@@ -393,6 +425,6 @@ elif page == "Configurações":
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: #999; font-size: 0.85em;'>
-👋 Desenvolvido com ❤️ | Rastreador Nutricional Inteligente
+👋 Desenvolvido com ❤️ | Rastreador Nutricional Inteligente | v2.6
 </div>
 """, unsafe_allow_html=True)
