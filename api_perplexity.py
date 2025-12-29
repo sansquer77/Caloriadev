@@ -151,8 +151,9 @@ def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
 
 def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
     """
-    Analisa refeição usando APENAS Perplexity AI para obter dados nutricionais.
-    Não depende de APIs externas de nutrição.
+    Analisa refeição usando Perplexity AI para buscar dados nutricionais de fontes verificadas.
+    Busca em TACO/TBCA/IBGE (Brasil) e USDA (backup).
+    NÃO faz estimativas - retorna erro se não encontrar dados exatos.
     """
     if not PERPLEXITY_API_KEY:
         print("Erro: PERPLEXITY_API_KEY não configurada")
@@ -167,13 +168,33 @@ def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
         'Content-Type': 'application/json'
     }
     
-    prompt = f"""Você é um nutricionista especialista. Analise a seguinte refeição e forneça os valores nutricionais ESTIMADOS.
+    prompt = f"""Você é um sistema de consulta nutricional. Sua tarefa é buscar dados nutricionais EXATOS de fontes verificadas.
 
-Refeição: {meal_text}
+REFEIÇÃO A ANALISAR: {meal_text}
 
-Responda APENAS em formato JSON válido, sem explicações adicionais. Use este formato exato:
+INSTRUÇÕES OBRIGATÓRIAS:
+1. Busque os dados nutricionais APENAS nestas fontes verificadas (em ordem de prioridade):
+   - TBCA (Tabela Brasileira de Composição de Alimentos): https://www.tbca.net.br
+   - TACO (Tabela de Composição de Alimentos): dados UNICAMP/NEPA
+   - Open Food Facts Brasil: https://br.openfoodfacts.org
+   - USDA FoodData Central (backup para itens não brasileiros)
+
+2. Para cada alimento, identifique:
+   - O nome exato do alimento na tabela
+   - A quantidade especificada (ou assuma 100g se não especificado)
+   - Os valores nutricionais EXATOS da fonte
+
+3. NÃO ESTIME valores. NÃO INVENTE dados. Use APENAS dados encontrados nas fontes.
+
+4. Se NÃO encontrar dados exatos para algum alimento, retorne:
+   {{"error": "not_found", "missing_items": ["item1", "item2"]}}
+
+5. Se encontrar todos os dados, retorne APENAS este JSON (sem texto adicional):
 {{
-    "items": ["item1", "item2"],
+    "success": true,
+    "items": [
+        {{"name": "nome do alimento", "quantity": "100g", "source": "TBCA"}}
+    ],
     "calories": 0,
     "protein": 0,
     "fat_total": 0,
@@ -184,47 +205,71 @@ Responda APENAS em formato JSON válido, sem explicações adicionais. Use este 
     "sodium": 0
 }}
 
-Onde:
-- items: lista dos alimentos identificados
+Valores:
 - calories: calorias totais (kcal)
-- protein: proteínas em gramas
-- fat_total: gorduras totais em gramas
-- fat_saturated: gorduras saturadas em gramas
-- carbs: carboidratos totais em gramas
-- sugar: açúcares em gramas
-- fiber: fibras em gramas
-- sodium: sódio em miligramas
+- protein: proteínas (g)
+- fat_total: gorduras totais (g)
+- fat_saturated: gorduras saturadas (g)
+- carbs: carboidratos totais (g)
+- sugar: açúcares (g)
+- fiber: fibras (g)
+- sodium: sódio (mg)
 
-Seja preciso nas estimativas baseando-se em tabelas nutricionais padrão (TACO, USDA)."""
+RESPONDA APENAS COM O JSON, sem explicações."""
 
     data = {
         "model": "llama-3.1-sonar-small-128k-online",
         "messages": [
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 500,
+        "max_tokens": 800,
         "temperature": 0.1
     }
     
     try:
-        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=30)
+        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=45)
         print(f"Perplexity Nutrition Status: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
             if 'choices' in result and len(result['choices']) > 0:
                 content = result['choices'][0].get('message', {}).get('content', '')
-                print(f"Perplexity Response: {content[:200]}...")
+                print(f"Perplexity Response: {content[:300]}...")
                 
                 # Extrai JSON da resposta
                 try:
                     # Tenta encontrar JSON na resposta
                     import re
-                    json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+                    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content, re.DOTALL)
                     if json_match:
                         nutrition_data = json.loads(json_match.group())
                     else:
                         nutrition_data = json.loads(content)
+                    
+                    # Verifica se houve erro (alimentos não encontrados)
+                    if nutrition_data.get('error') == 'not_found':
+                        missing = nutrition_data.get('missing_items', [])
+                        if missing:
+                            missing_str = ', '.join(missing)
+                            return {'error': f'Dados nutricionais não encontrados para: {missing_str}. Por favor, descreva melhor os alimentos ou use nomes mais específicos.'}
+                        return {'error': 'Dados nutricionais não encontrados nas fontes verificadas. Tente descrever os alimentos de forma mais específica.'}
+                    
+                    # Verifica se retornou sucesso
+                    if not nutrition_data.get('success') and not nutrition_data.get('calories'):
+                        return {'error': 'Não foi possível obter dados nutricionais verificados. Tente descrever melhor os alimentos.'}
+                    
+                    # Extrai fonte usada
+                    items_info = nutrition_data.get('items', [])
+                    sources = set()
+                    item_names = []
+                    for item in items_info:
+                        if isinstance(item, dict):
+                            item_names.append(item.get('name', ''))
+                            sources.add(item.get('source', 'TBCA'))
+                        else:
+                            item_names.append(str(item))
+                    
+                    source_str = '/'.join(sources) if sources else 'TBCA/TACO'
                     
                     # Converte para nosso formato padrão
                     nutrients = {
@@ -240,8 +285,8 @@ Seja preciso nas estimativas baseando-se em tabelas nutricionais padrão (TACO, 
                         'sodium': float(nutrition_data.get('sodium', 0)),
                         'potassium': 0.0,
                         'cholesterol': 0.0,
-                        'items_detected': nutrition_data.get('items', [meal_text]),
-                        'source': 'Perplexity AI (estimativa)'
+                        'items_detected': item_names if item_names else [meal_text],
+                        'source': f'Perplexity AI ({source_str})'
                     }
                     
                     print(f"Nutrientes extraídos: {nutrients}")
