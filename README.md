@@ -25,10 +25,11 @@ Aplicativo de análise nutricional inteligente que permite fotografar refeiçõe
 - **Frontend**: Streamlit
 - **Backend**: Python 3.11
 - **Banco de Dados**: PostgreSQL (produção) / SQLite (desenvolvimento)
+- **IA para Visão**: Google Gemini (análise de fotos)
 - **Fontes Nutricionais**:
   - TACO (Tabela Brasileira de Composição de Alimentos) - dados locais
   - Open Food Facts (API gratuita com milhões de produtos)
-  - Perplexity AI (identificação de alimentos por imagem + fallback)
+  - Perplexity AI (fallback para busca de dados nutricionais)
 
 ## 🚀 Deploy na Digital Ocean
 
@@ -36,6 +37,7 @@ Aplicativo de análise nutricional inteligente que permite fotografar refeiçõe
 
 1. Conta na [Digital Ocean](https://www.digitalocean.com/)
 2. Chave de API da [Perplexity](https://www.perplexity.ai/)
+3. Chave de API do [Google Gemini](https://aistudio.google.com/apikey) (para análise de fotos)
 
 ### Passo a Passo
 
@@ -53,6 +55,7 @@ Aplicativo de análise nutricional inteligente que permite fotografar refeiçõe
    | Variável | Descrição |
    |----------|-----------|
    | `PERPLEXITY_API_KEY` | Sua chave da API Perplexity |
+   | `GEMINI_KEY` | Sua chave da API Google Gemini (para análise de fotos) |
    | `SECRET_KEY` | Chave secreta para JWT (gere uma aleatória) |
    | `DATABASE_URL` | URL do banco PostgreSQL (fornecida pela DO) |
 

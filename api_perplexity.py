@@ -1,6 +1,7 @@
 """
 Módulo de integração com APIs de nutrição.
 Fluxo: TACO (local) → Open Food Facts (API gratuita) → Perplexity AI (fallback)
+Análise de imagens: Google Gemini (visão)
 """
 
 import base64
@@ -30,7 +31,10 @@ except ImportError:
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions'
 PERPLEXITY_MODEL = 'sonar'
-PERPLEXITY_VISION_MODEL = 'llama-3.1-sonar-small-128k-online'
+
+# Configurações da API Google Gemini (para análise de imagens)
+GEMINI_API_KEY = os.getenv('GEMINI_KEY')
+GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'
 
 # Timeouts para requisições (em segundos)
 API_TIMEOUT_SHORT = 20
@@ -42,74 +46,134 @@ def encode_image_to_base64(image_bytes: bytes) -> str:
     return base64.b64encode(image_bytes).decode('utf-8')
 
 
-def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
+def identify_items_gemini(image_bytes: bytes) -> Optional[Dict]:
     """
-    Identifica itens alimentares na imagem usando Perplexity com visão.
+    Analisa imagem de alimento usando Google Gemini Vision.
+    
+    Identifica:
+    - Pratos/comidas: lista de alimentos com quantidade estimada em gramas
+    - Produtos com rótulo: lê tabela nutricional diretamente
     
     Args:
-        image_bytes: Bytes da imagem
+        image_bytes: Bytes da imagem (JPEG ou PNG)
     
     Returns:
-        Descrição dos alimentos identificados ou None
+        Dicionário com:
+        - 'type': 'food' ou 'label'
+        - 'items': lista de alimentos identificados (para 'food')
+        - 'description': descrição dos alimentos
+        - 'nutrients': dados nutricionais lidos do rótulo (para 'label')
+        Ou None se falhar
     """
-    if not PERPLEXITY_API_KEY:
-        print("Erro: PERPLEXITY_API_KEY não configurada")
+    if not GEMINI_API_KEY:
+        print("Erro: GEMINI_KEY não configurada")
         return None
     
-    headers = {
-        'Authorization': f'Bearer {PERPLEXITY_API_KEY}',
-        'Content-Type': 'application/json'
-    }
     img_base64 = encode_image_to_base64(image_bytes)
     
-    prompt = (
-        "You are an expert nutritionist. Analyze this food image and identify "
-        "ALL visible food items. For each item, estimate the quantity/portion. "
-        "Respond ONLY with a simple comma-separated list of foods and quantities in ENGLISH. "
-        "Example: '1 cup white rice, 100g grilled chicken breast, lettuce salad with tomato'. "
-        "Be specific about quantities for accurate nutritional analysis."
-    )
+    prompt = """Você é um nutricionista especializado em análise de alimentos.
+
+Analise esta imagem e siga as instruções:
+
+1) Se for um PRATO ou COMIDA PRONTA:
+   - Identifique o prato e os principais componentes
+   - Estime a porção de cada item em gramas
+   - Retorne JSON no formato:
+   {"type": "food", "description": "descrição do prato", "items": [{"name": "nome do alimento", "quantity_grams": 100}, ...]}
+
+2) Se for um PRODUTO COM RÓTULO NUTRICIONAL:
+   - Leia a tabela nutricional da embalagem
+   - Extraia os valores EXATAMENTE como aparecem no rótulo
+   - Retorne JSON no formato:
+   {"type": "label", "product_name": "nome do produto", "brand": "marca", "serving_size": "porção em g ou ml", "nutrients": {"calories": 0, "protein": 0, "carbs": 0, "sugar": 0, "fat_total": 0, "fat_saturated": 0, "fiber": 0, "sodium": 0}}
+
+IMPORTANTE:
+- Retorne APENAS o JSON, sem explicações
+- Para comidas, seja específico: "arroz branco" ao invés de apenas "arroz"
+- Para rótulos, use os valores exatos da tabela nutricional
+- Se não conseguir identificar, retorne: {"type": "unknown", "error": "Não foi possível identificar o alimento"}"""
+
+    # Preparar request para Gemini
+    url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
     
     data = {
-        "model": PERPLEXITY_VISION_MODEL,
-        "messages": [
+        "contents": [
             {
-                "role": "user",
-                "content": [
+                "parts": [
                     {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{img_base64}"
+                        "inlineData": {
+                            "mimeType": "image/jpeg",
+                            "data": img_base64
                         }
                     },
                     {
-                        "type": "text",
                         "text": prompt
                     }
                 ]
             }
         ],
-        "max_tokens": 500,
-        "temperature": 0.2
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 1024
+        }
+    }
+    
+    headers = {
+        'Content-Type': 'application/json'
     }
     
     try:
-        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=API_TIMEOUT_LONG)
+        response = requests.post(url, json=data, headers=headers, timeout=API_TIMEOUT_LONG)
+        print(f"Gemini Vision Status: {response.status_code}")
+        
         if response.status_code == 200:
             result = response.json()
-            if 'choices' in result and len(result['choices']) > 0:
-                message = result['choices'][0].get('message', {})
-                description = message.get('content', '')
-                return description.strip()
+            
+            # Extrair texto da resposta
+            candidates = result.get('candidates', [])
+            if candidates:
+                content = candidates[0].get('content', {})
+                parts = content.get('parts', [])
+                if parts:
+                    text = parts[0].get('text', '')
+                    print(f"Gemini Response: {text[:300]}...")
+                    
+                    # Tentar parsear JSON da resposta
+                    try:
+                        # Limpar resposta (remover markdown se houver)
+                        text = text.strip()
+                        if text.startswith('```json'):
+                            text = text[7:]
+                        if text.startswith('```'):
+                            text = text[3:]
+                        if text.endswith('```'):
+                            text = text[:-3]
+                        text = text.strip()
+                        
+                        return json.loads(text)
+                    except json.JSONDecodeError as e:
+                        print(f"Erro ao parsear JSON do Gemini: {e}")
+                        # Tentar extrair JSON com regex
+                        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+                        if json_match:
+                            try:
+                                return json.loads(json_match.group())
+                            except:
+                                pass
+                        return None
         else:
-            print(f"Erro Perplexity API: {response.status_code} - {response.text}")
+            print(f"Erro Gemini API: {response.status_code} - {response.text}")
+            return None
+            
     except requests.exceptions.Timeout:
-        print("Timeout ao identificar itens na imagem")
+        print("Timeout ao chamar Gemini API")
+        return None
     except requests.exceptions.RequestException as e:
-        print(f"Erro de conexão ao chamar Perplexity API: {e}")
+        print(f"Erro de conexão ao chamar Gemini API: {e}")
+        return None
     except Exception as e:
-        print(f"Exceção inesperada ao chamar Perplexity API: {e}")
-    return None
+        print(f"Exceção inesperada ao chamar Gemini API: {e}")
+        return None
 
 def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
     """
@@ -130,16 +194,23 @@ def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
         'Content-Type': 'application/json'
     }
     
-    prompt = f"""Busque dados nutricionais da TBCA/TACO (Brasil) ou USDA para CADA ITEM desta refeição:
+    prompt = f"""Extraia os valores nutricionais de "{meal_text}" priorizando estas fontes (nesta ordem):
 
-{meal_text}
+1. Rótulo da embalagem brasileira (valores por 100g ou 100ml)
+2. TBCA/TACO oficial (Tabela Brasileira de Composição de Alimentos)
+3. Site oficial da marca (Yakult, Nestlé, Sadia, Coca-Cola, etc.)
+4. USDA FoodData Central (apenas como último recurso)
 
-IMPORTANTE: Identifique TODOS os itens separados por vírgula, "e" ou ponto. Calcule a soma total dos valores nutricionais de todos os itens.
+REGRAS IMPORTANTES:
+- NÃO estime valores. Use APENAS dados oficiais de rótulos ou tabelas.
+- Se for produto industrializado, busque o rótulo oficial da marca.
+- Se não encontrar dados oficiais, retorne "not_found": true
 
 Retorne APENAS JSON neste formato:
-{{"items":["item1 com quantidade","item2 com quantidade"],"calories":0,"protein":0,"fat_total":0,"fat_saturated":0,"carbs":0,"sugar":0,"fiber":0,"sodium":0}}
+{{"items":["{meal_text}"],"calories":0,"protein":0,"fat_total":0,"fat_saturated":0,"carbs":0,"sugar":0,"fiber":0,"sodium":0,"source":"nome da fonte","not_found":false}}
 
-Os valores devem ser a SOMA de todos os itens. Use valores reais das tabelas nutricionais."""
+Se NÃO encontrar dados oficiais, retorne:
+{{"items":["{meal_text}"],"not_found":true,"error":"Não encontrei dados nutricionais oficiais para este item."}}"""
 
     data = {
         "model": PERPLEXITY_MODEL,
@@ -163,15 +234,23 @@ Os valores devem ser a SOMA de todos os itens. Use valores reais das tabelas nut
                 # Extrai JSON da resposta
                 try:
                     # Tenta encontrar JSON na resposta
-                    import re
                     json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content, re.DOTALL)
                     if json_match:
                         nutrition_data = json.loads(json_match.group())
                     else:
                         nutrition_data = json.loads(content)
                     
+                    # Verifica se encontrou dados oficiais
+                    if nutrition_data.get('not_found', False):
+                        error_msg = nutrition_data.get('error', 'Não encontrei dados nutricionais oficiais para este item.')
+                        print(f"Item não encontrado: {error_msg}")
+                        return {'error': error_msg}
+                    
                     # Extrai itens
                     items_info = nutrition_data.get('items', [meal_text])
+                    
+                    # Extrai fonte dos dados
+                    source = nutrition_data.get('source', 'Perplexity AI')
                     
                     # Converte para nosso formato padrão
                     nutrients = {
@@ -188,7 +267,7 @@ Os valores devem ser a SOMA de todos os itens. Use valores reais das tabelas nut
                         'potassium': 0.0,
                         'cholesterol': 0.0,
                         'items_detected': items_info if items_info else [meal_text],
-                        'source': 'Perplexity AI (TBCA/TACO)'
+                        'source': source
                     }
                     
                     print(f"Nutrientes extraídos: {nutrients}")
@@ -256,9 +335,53 @@ def parse_food_items(meal_text: str) -> List[Tuple[str, float]]:
     return items
 
 
+# Marcas conhecidas de produtos industrializados brasileiros
+KNOWN_BRANDS = [
+    'yakult', 'nestle', 'nestlé', 'sadia', 'perdigao', 'perdigão', 'seara',
+    'coca-cola', 'coca cola', 'pepsi', 'fanta', 'sprite', 'guarana', 'guaraná',
+    'antarctica', 'brahma', 'skol', 'heineken', 'budweiser',
+    'bauducco', 'visconti', 'oreo', 'trakinas', 'passatempo', 'club social',
+    'danone', 'activia', 'vigor', 'itambe', 'itambé', 'parmalat', 'elegê', 'elege',
+    'marata', 'yoki', 'camil', 'urbano', 'tio joao', 'tio joão',
+    'hellmanns', "hellmann's", 'heinz', 'knorr', 'maggi',
+    'delicia', 'delícia', 'qualy', 'doriana',
+    'tang', 'clight', 'mid', 'frisco',
+    'nescafe', 'nescafé', 'pilao', 'pilão', 'tres coracoes', 'três corações',
+    'lacta', 'garoto', 'arcor', 'sonho de valsa', 'bis', 'diamante negro',
+    'tang', 'ades', 'del valle', 'sufresh', 'kapo',
+    'nissin', 'miojo', 'cup noodles',
+    'toddy', 'nescau', 'ovomaltine',
+    'mcdonalds', "mcdonald's", 'burger king', 'bk', 'subway', 'habibs', "habib's",
+    'spoleto', 'giraffas', 'outback', 'madero',
+]
+
+
+def is_industrial_product(food_name: str) -> bool:
+    """
+    Verifica se o alimento é um produto industrializado de marca conhecida.
+    Esses produtos devem ser buscados no Open Food Facts ou Perplexity,
+    não na TACO que contém apenas alimentos genéricos.
+    
+    Args:
+        food_name: Nome do alimento
+        
+    Returns:
+        True se for produto industrializado de marca conhecida
+    """
+    name_lower = food_name.lower()
+    
+    # Verificar marcas conhecidas
+    for brand in KNOWN_BRANDS:
+        if brand in name_lower:
+            return True
+    
+    return False
+
+
 def get_nutrition_from_taco(food_items: List[Tuple[str, float]]) -> Dict:
     """
     Busca nutrição de múltiplos itens na TACO.
+    Pula produtos industrializados de marcas conhecidas.
     Retorna dicionário com nutrients, found_items e not_found.
     """
     if not TACO_AVAILABLE:
@@ -281,6 +404,12 @@ def get_nutrition_from_taco(food_items: List[Tuple[str, float]]) -> Dict:
     not_found_items = []
     
     for food_name, quantity in food_items:
+        # Pular produtos industrializados de marcas - buscar direto no OFF/Perplexity
+        if is_industrial_product(food_name):
+            print(f"⏩ Produto de marca detectado, pulando TACO: {food_name}")
+            not_found_items.append((food_name, quantity))
+            continue
+            
         nutrition = get_taco_nutrition(food_name, quantity)
         
         if nutrition:
@@ -531,19 +660,169 @@ def analyze_meal_by_text(meal_text: str, barcode: Optional[str] = None) -> Optio
 
 
 def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
-    """Analisa foto de refeição: identifica itens e calcula nutrientes usando Perplexity."""
-    description = identify_items_perplexity(image_bytes)
-    if not description:
-        print("Não foi possível identificar itens na imagem.")
-        return {'error': 'Não foi possível identificar os alimentos na imagem. Tente descrever manualmente.'}
+    """
+    Analisa foto de refeição usando Google Gemini Vision.
     
-    print(f"Descrição identificada dos itens: {description}")
-    nutrients = analyze_meal_by_text(description)
+    Fluxo:
+    1. Gemini identifica os alimentos ou lê rótulo nutricional
+    2. Se for rótulo: retorna valores nutricionais diretamente
+    3. Se for comida: busca cada item no fluxo TACO → Open Food Facts → Perplexity
     
-    if nutrients and 'error' not in nutrients:
-        nutrients['description'] = description
+    Args:
+        image_bytes: Bytes da imagem (JPEG ou PNG)
     
-    return nutrients
+    Returns:
+        Dicionário com dados nutricionais ou erro
+    """
+    # Usar Gemini para analisar a imagem
+    gemini_result = identify_items_gemini(image_bytes)
+    
+    if not gemini_result:
+        print("Não foi possível identificar itens na imagem com Gemini.")
+        return {'error': 'Não foi possível identificar os alimentos na imagem. Verifique se a foto está clara e tente novamente.'}
+    
+    result_type = gemini_result.get('type', 'unknown')
+    
+    # Caso 1: Erro ou desconhecido
+    if result_type == 'unknown':
+        error_msg = gemini_result.get('error', 'Não foi possível identificar o alimento na imagem.')
+        return {'error': error_msg}
+    
+    # Caso 2: Rótulo nutricional - usar valores diretamente
+    if result_type == 'label':
+        print("Gemini identificou rótulo nutricional")
+        nutrients = gemini_result.get('nutrients', {})
+        product_name = gemini_result.get('product_name', 'Produto')
+        brand = gemini_result.get('brand', '')
+        
+        result = {
+            'calories': float(nutrients.get('calories', 0)),
+            'protein': float(nutrients.get('protein', 0)),
+            'fat_total': float(nutrients.get('fat_total', 0)),
+            'fat_saturated': float(nutrients.get('fat_saturated', 0)),
+            'fat_polyunsaturated': 0.0,
+            'fat_monounsaturated': 0.0,
+            'carbs': float(nutrients.get('carbs', 0)),
+            'sugar': float(nutrients.get('sugar', 0)),
+            'fiber': float(nutrients.get('fiber', 0)),
+            'sodium': float(nutrients.get('sodium', 0)),
+            'potassium': 0.0,
+            'cholesterol': 0.0,
+            'items_detected': [product_name],
+            'description': f"{product_name} ({brand})" if brand else product_name,
+            'source': 'Rótulo (Gemini Vision)',
+            'serving_size': gemini_result.get('serving_size', '100g')
+        }
+        
+        print(f"Nutrientes do rótulo: {result}")
+        return result
+    
+    # Caso 3: Comida/prato - buscar cada item no fluxo normal
+    if result_type == 'food':
+        print("Gemini identificou prato/comida")
+        description = gemini_result.get('description', '')
+        items = gemini_result.get('items', [])
+        
+        if not items:
+            # Se não tem itens estruturados, usar descrição como texto
+            if description:
+                nutrients = analyze_meal_by_text(description)
+                if nutrients and 'error' not in nutrients:
+                    nutrients['description'] = description
+                return nutrients
+            return {'error': 'Não foi possível identificar os alimentos na imagem.'}
+        
+        # Converter itens do Gemini para formato do fluxo (nome, quantidade_gramas)
+        food_items = []
+        items_text = []
+        for item in items:
+            name = item.get('name', '')
+            quantity = float(item.get('quantity_grams', 100))
+            if name:
+                food_items.append((name, quantity))
+                items_text.append(f"{quantity}g de {name}")
+        
+        if not food_items:
+            return {'error': 'Não foi possível identificar os alimentos na imagem.'}
+        
+        print(f"Itens identificados pelo Gemini: {food_items}")
+        
+        # Usar o fluxo normal: TACO → Open Food Facts → Perplexity
+        # 1. Buscar na TACO primeiro
+        taco_result = get_nutrition_from_taco(food_items)
+        
+        found_items = taco_result.get('found_items', [])
+        not_found = taco_result.get('not_found', [])
+        total_nutrients = taco_result.get('nutrients', {})
+        
+        sources = []
+        if found_items:
+            sources.append('TACO')
+        
+        # 2. Para itens não encontrados na TACO, buscar no Open Food Facts
+        if not_found and OPENFOODFACTS_AVAILABLE:
+            print(f"Buscando no Open Food Facts: {not_found}")
+            off_result = get_nutrition_from_openfoodfacts(not_found)
+            
+            off_found = off_result.get('found_items', [])
+            off_not_found = off_result.get('not_found', [])
+            off_nutrients = off_result.get('nutrients', {})
+            
+            if off_found:
+                sources.append('Open Food Facts')
+                found_items.extend(off_found)
+                
+                for key in total_nutrients:
+                    total_nutrients[key] = total_nutrients.get(key, 0) + off_nutrients.get(key, 0)
+            
+            not_found = off_not_found
+        
+        # 3. Para itens ainda não encontrados, usar Perplexity
+        if not_found:
+            print(f"Buscando no Perplexity: {not_found}")
+            perplexity_result = get_nutrition_from_perplexity(not_found)
+            
+            if perplexity_result and 'error' not in perplexity_result:
+                sources.append('Perplexity')
+                
+                for key in total_nutrients:
+                    total_nutrients[key] = total_nutrients.get(key, 0) + perplexity_result.get(key, 0)
+                
+                perplexity_items = perplexity_result.get('items_detected', [])
+                for item in perplexity_items:
+                    found_items.append({
+                        'name': item if isinstance(item, str) else item.get('name', ''),
+                        'source': 'Perplexity'
+                    })
+        
+        # 4. Montar resultado final
+        if not found_items and not total_nutrients.get('calories', 0):
+            return {'error': 'Não foi possível encontrar informações nutricionais para os alimentos identificados.'}
+        
+        source_str = ' + '.join(sources) if sources else 'Gemini Vision'
+        
+        result = {
+            'calories': total_nutrients.get('calories', 0),
+            'protein': total_nutrients.get('protein', 0),
+            'fat_total': total_nutrients.get('fat_total', 0),
+            'fat_saturated': total_nutrients.get('fat_saturated', 0),
+            'fat_polyunsaturated': 0.0,
+            'fat_monounsaturated': 0.0,
+            'carbs': total_nutrients.get('carbs', 0),
+            'sugar': total_nutrients.get('sugar', 0),
+            'fiber': total_nutrients.get('fiber', 0),
+            'sodium': total_nutrients.get('sodium', 0),
+            'potassium': total_nutrients.get('potassium', 0),
+            'cholesterol': total_nutrients.get('cholesterol', 0),
+            'items_detected': [item.get('name', item) if isinstance(item, dict) else item for item in found_items],
+            'description': description or ', '.join(items_text),
+            'source': source_str
+        }
+        
+        print(f"Resultado final (foto): {result}")
+        return result
+    
+    return {'error': 'Tipo de imagem não reconhecido.'}
 
 
 def analyze_meal_by_barcode(barcode: str, quantity_grams: float = 100.0) -> Optional[Dict]:

@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime, timedelta
 from auth import generate_token, decode_token, create_password_hash, verify_password_hash
-from api_perplexity import analyze_meal_photo, analyze_meal_by_description, analyze_meal_by_barcode
+from api_perplexity import analyze_meal_by_description, analyze_meal_by_barcode, analyze_meal_photo
 from models import MealData
 from storage import (
     save_meal, get_daily_macros, get_aggregated_macros, create_user,
@@ -95,7 +95,7 @@ def init_session_state():
 def show_login_page():
     """Exibe página de login/cadastro."""
     st.markdown('<h1 class="main-header">🍽️ Caloria</h1>', unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center;'>Análise nutricional inteligente por foto</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Análise nutricional inteligente</p>", unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["🔐 Login", "📝 Cadastro"])
     
@@ -205,7 +205,7 @@ def show_sidebar():
         
         page = st.radio(
             "Navegação",
-            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "📄 Relatórios", "👤 Meu Perfil", "💾 Backup/Restore"],
+            ["🍽️ Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "📄 Relatórios", "👤 Meu Perfil", "💾 Backup/Restore"],
             label_visibility="collapsed"
         )
         
@@ -318,14 +318,16 @@ def get_location_component():
     return lat, lon, location_name
 
 def show_analysis_page():
-    """Página principal de análise de fotos."""
-    st.markdown("## 📸 Análise de Refeição")
+    """Página principal de análise de refeições."""
+    st.markdown("## 🍽️ Análise de Refeição")
     
     # Tabs para foto, texto ou código de barras
     tab1, tab2, tab3 = st.tabs(["📷 Tirar Foto", "✍️ Descrever Refeição", "📊 Código de Barras"])
     
     with tab1:
-        st.markdown("Tire uma foto do seu prato para análise automática:")
+        st.markdown("### 📷 Análise por Foto")
+        st.info("💡 Tire uma foto do seu prato ou do rótulo nutricional de um produto.")
+        
         img_file = st.camera_input("Capturar foto", key="camera")
         
         # Também permite upload
@@ -341,10 +343,13 @@ def show_analysis_page():
             st.image(image_bytes, caption="Imagem para análise", use_container_width=True)
     
     with tab2:
+        st.markdown("### ✍️ Descreva sua refeição")
+        st.info("💡 **Dica:** Seja específico com as quantidades para uma análise mais precisa.")
+        
         description_input = st.text_area(
-            "Descreva sua refeição",
-            placeholder="Ex: 1 prato de arroz, 100g de frango grelhado, salada de alface com tomate",
-            height=100,
+            "O que você comeu?",
+            placeholder="Ex: 1 prato de arroz, 100g de frango grelhado, salada de alface com tomate\n\nPara produtos industrializados, use o nome completo: 'Suco de Maçã Yakult 200ml'",
+            height=120,
             key="desc_input"
         )
     
@@ -405,8 +410,8 @@ def show_analysis_page():
             with st.spinner("📊 Buscando produto no Open Food Facts..."):
                 nutrients = analyze_meal_by_barcode(barcode_input.strip(), quantity_grams=float(barcode_quantity))
         # Análise por foto
-        elif 'image_bytes' in dir() and image_bytes:
-            with st.spinner("🤖 Analisando imagem com IA..."):
+        elif image_bytes:
+            with st.spinner("🤖 Analisando imagem com IA (Gemini Vision)..."):
                 nutrients = analyze_meal_photo(image_bytes)
         # Análise por texto
         elif description_input:
@@ -1195,7 +1200,7 @@ def main():
     else:
         page = show_sidebar()
         
-        if page == "📸 Nova Análise":
+        if page == "🍽️ Nova Análise":
             show_analysis_page()
         elif page == "📊 Resumo Diário":
             show_daily_summary()
