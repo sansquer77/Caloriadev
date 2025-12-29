@@ -7,7 +7,8 @@ from nutrition_fixes import safe_session_key, process_gemini_food_items
 from models import MealData
 from storage import (
     save_meal, get_daily_macros, get_aggregated_macros, create_user,
-    get_user_by_username, get_user_by_id, update_user_profile, update_user_password
+    get_user_by_username, get_user_by_id, update_user_profile, update_user_password,
+    get_user_meals, delete_meal
 )
 from db import init_db, SQLITE_PATH
 import json
@@ -284,7 +285,6 @@ def get_location_component():
     # Buscar locais já cadastrados do usuário
     location_options = []
     try:
-        from storage import get_user_meals
         user_id = st.session_state.get('user_id', None)
         if user_id:
             meals = get_user_meals(user_id, limit=200)
