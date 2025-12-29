@@ -305,16 +305,52 @@ def get_location_component():
     
     st.components.v1.html(location_js, height=80)
     
+    # Lê latitude/longitude da URL se presentes (preenchidas pelo JS)
+    query_params = st.experimental_get_query_params()
+    auto_lat = query_params.get('auto_lat', [None])[0]
+    auto_lon = query_params.get('auto_lon', [None])[0]
+    if auto_lat and auto_lon:
+        try:
+            auto_lat = float(auto_lat)
+            auto_lon = float(auto_lon)
+            st.session_state['lat_input'] = auto_lat
+            st.session_state['lon_input'] = auto_lon
+        except Exception:
+            pass
+
     # Campos manuais
     st.caption("Ou insira manualmente:")
     col1, col2 = st.columns(2)
     with col1:
-        lat = st.number_input("Latitude", value=0.0, format="%.6f", key="lat_input")
+        lat = st.number_input("Latitude", value=st.session_state.get('lat_input', 0.0), format="%.6f", key="lat_input")
     with col2:
-        lon = st.number_input("Longitude", value=0.0, format="%.6f", key="lon_input")
-    
-    location_name = st.text_input("Nome do local (opcional)", placeholder="Ex: Restaurante XYZ", key="loc_name")
-    
+        lon = st.number_input("Longitude", value=st.session_state.get('lon_input', 0.0), format="%.6f", key="lon_input")
+
+    # Buscar locais já cadastrados do usuário
+    location_options = []
+    try:
+        from storage import get_user_meals
+        user_id = st.session_state.get('user_id', None)
+        if user_id:
+            meals = get_user_meals(user_id, limit=200)
+            location_options = sorted(list(set([m['location_name'] for m in meals if m['location_name']])))
+    except Exception as e:
+        location_options = []
+
+    # Campo com autocomplete (selectbox com digitação livre)
+    if location_options:
+        location_name = st.selectbox(
+            "Nome do local (opcional)",
+            options=["(Novo local)"] + location_options,
+            index=0,
+            key="loc_name_select",
+            help="Escolha um local já cadastrado ou digite um novo."
+        )
+        if location_name == "(Novo local)":
+            location_name = st.text_input("Digite o nome do local", key="loc_name", placeholder="Ex: Restaurante XYZ")
+    else:
+        location_name = st.text_input("Nome do local (opcional)", placeholder="Ex: Restaurante XYZ", key="loc_name")
+
     return lat, lon, location_name
 
 def show_analysis_page():
@@ -501,6 +537,23 @@ def show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_na
     
     meal_id = save_meal(meal)
     st.success(f"💾 Refeição salva com sucesso! (ID: {meal_id})")
+
+    # Limpar formulários das abas após sucesso
+    for key in [
+        "camera", "upload", "desc_input", "barcode_input", "barcode_quantity",
+        "meal_type", "meal_date", "lat_input", "lon_input", "loc_name"
+    ]:
+        if key in st.session_state:
+            st.session_state[key] = None
+    # Resetar valores padrão para alguns campos
+    st.session_state["barcode_quantity"] = 100
+    st.session_state["meal_type"] = "lunch"
+    st.session_state["meal_date"] = date.today()
+    st.session_state["lat_input"] = 0.0
+    st.session_state["lon_input"] = 0.0
+    st.session_state["loc_name"] = ""
+    # Rerun para atualizar UI
+    st.experimental_rerun()
 
 def show_daily_summary():
     """Exibe resumo diário de nutrientes."""
