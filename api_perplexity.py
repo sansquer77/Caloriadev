@@ -168,57 +168,17 @@ def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
         'Content-Type': 'application/json'
     }
     
-    prompt = f"""Você é um sistema de consulta nutricional. Sua tarefa é buscar dados nutricionais EXATOS de fontes verificadas.
+    prompt = f"""Busque dados nutricionais da TBCA/TACO (Brasil) ou USDA para esta refeição:
 
-REFEIÇÃO A ANALISAR: {meal_text}
+{meal_text}
 
-INSTRUÇÕES OBRIGATÓRIAS:
-1. Busque os dados nutricionais APENAS nestas fontes verificadas (em ordem de prioridade):
-   - TBCA (Tabela Brasileira de Composição de Alimentos): https://www.tbca.net.br
-   - TACO (Tabela de Composição de Alimentos): dados UNICAMP/NEPA
-   - Open Food Facts Brasil: https://br.openfoodfacts.org
-   - USDA FoodData Central (backup para itens não brasileiros)
+Retorne APENAS JSON neste formato:
+{{"items":["alimento1","alimento2"],"calories":0,"protein":0,"fat_total":0,"fat_saturated":0,"carbs":0,"sugar":0,"fiber":0,"sodium":0}}
 
-2. Para cada alimento, identifique:
-   - O nome exato do alimento na tabela
-   - A quantidade especificada (ou assuma 100g se não especificado)
-   - Os valores nutricionais EXATOS da fonte
-
-3. NÃO ESTIME valores. NÃO INVENTE dados. Use APENAS dados encontrados nas fontes.
-
-4. Se NÃO encontrar dados exatos para algum alimento, retorne:
-   {{"error": "not_found", "missing_items": ["item1", "item2"]}}
-
-5. Se encontrar todos os dados, retorne APENAS este JSON (sem texto adicional):
-{{
-    "success": true,
-    "items": [
-        {{"name": "nome do alimento", "quantity": "100g", "source": "TBCA"}}
-    ],
-    "calories": 0,
-    "protein": 0,
-    "fat_total": 0,
-    "fat_saturated": 0,
-    "carbs": 0,
-    "sugar": 0,
-    "fiber": 0,
-    "sodium": 0
-}}
-
-Valores:
-- calories: calorias totais (kcal)
-- protein: proteínas (g)
-- fat_total: gorduras totais (g)
-- fat_saturated: gorduras saturadas (g)
-- carbs: carboidratos totais (g)
-- sugar: açúcares (g)
-- fiber: fibras (g)
-- sodium: sódio (mg)
-
-RESPONDA APENAS COM O JSON, sem explicações."""
+Use valores reais das tabelas nutricionais. Não invente dados."""
 
     data = {
-        "model": "llama-3.1-sonar-small-128k-online",
+        "model": "sonar",
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -246,30 +206,8 @@ RESPONDA APENAS COM O JSON, sem explicações."""
                     else:
                         nutrition_data = json.loads(content)
                     
-                    # Verifica se houve erro (alimentos não encontrados)
-                    if nutrition_data.get('error') == 'not_found':
-                        missing = nutrition_data.get('missing_items', [])
-                        if missing:
-                            missing_str = ', '.join(missing)
-                            return {'error': f'Dados nutricionais não encontrados para: {missing_str}. Por favor, descreva melhor os alimentos ou use nomes mais específicos.'}
-                        return {'error': 'Dados nutricionais não encontrados nas fontes verificadas. Tente descrever os alimentos de forma mais específica.'}
-                    
-                    # Verifica se retornou sucesso
-                    if not nutrition_data.get('success') and not nutrition_data.get('calories'):
-                        return {'error': 'Não foi possível obter dados nutricionais verificados. Tente descrever melhor os alimentos.'}
-                    
-                    # Extrai fonte usada
-                    items_info = nutrition_data.get('items', [])
-                    sources = set()
-                    item_names = []
-                    for item in items_info:
-                        if isinstance(item, dict):
-                            item_names.append(item.get('name', ''))
-                            sources.add(item.get('source', 'TBCA'))
-                        else:
-                            item_names.append(str(item))
-                    
-                    source_str = '/'.join(sources) if sources else 'TBCA/TACO'
+                    # Extrai itens
+                    items_info = nutrition_data.get('items', [meal_text])
                     
                     # Converte para nosso formato padrão
                     nutrients = {
@@ -285,8 +223,8 @@ RESPONDA APENAS COM O JSON, sem explicações."""
                         'sodium': float(nutrition_data.get('sodium', 0)),
                         'potassium': 0.0,
                         'cholesterol': 0.0,
-                        'items_detected': item_names if item_names else [meal_text],
-                        'source': f'Perplexity AI ({source_str})'
+                        'items_detected': items_info if items_info else [meal_text],
+                        'source': 'Perplexity AI (TBCA/TACO)'
                     }
                     
                     print(f"Nutrientes extraídos: {nutrients}")
