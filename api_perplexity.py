@@ -9,8 +9,10 @@ from urllib.parse import quote
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions'
 
-CALORIENINJAS_API_KEY = os.getenv('CALORIENINJAS_API_KEY')
-CALORIENINJAS_API_URL = 'https://api.calorieninjas.com/v1/nutrition'
+# API Ninjas (substitui CalorieNinjas que foi descontinuado)
+# Suporta múltiplas variáveis de ambiente para flexibilidade
+NUTRITION_API_KEY = os.getenv('APININJAS_KEY') or os.getenv('CALORIENINJAS_API_KEY') or os.getenv('API_NINJAS_KEY')
+NUTRITION_API_URL = 'https://api.api-ninjas.com/v1/nutrition'
 
 def encode_image_to_base64(image_bytes: bytes) -> str:
     return base64.b64encode(image_bytes).decode('utf-8')
@@ -148,10 +150,10 @@ def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
     return None
 
 def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
-    """Analisa texto descrevendo alimentos usando CalorieNinjas API."""
-    if not CALORIENINJAS_API_KEY:
-        print("Erro: CALORIENINJAS_API_KEY não configurada")
-        return {'error': 'Chave de API CalorieNinjas não configurada. Configure CALORIENINJAS_API_KEY.'}
+    """Analisa texto descrevendo alimentos usando API Ninjas Nutrition API."""
+    if not NUTRITION_API_KEY:
+        print("Erro: API Key não configurada")
+        return {'error': 'Chave de API não configurada. Configure APININJAS_KEY.'}
     
     if not meal_text or len(meal_text.strip()) < 3:
         print("Erro: Descrição muito curta")
@@ -163,31 +165,32 @@ def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
     clean_text = clean_text.replace('\n', ' and ').replace('\r', '')
     
     # Remove caracteres que não são ASCII básico (emojis, acentos, etc)
-    # CalorieNinjas funciona melhor com ASCII puro
+    # API Ninjas funciona melhor com ASCII puro
     clean_text = clean_text.encode('ascii', 'ignore').decode('ascii')
     clean_text = ' '.join(clean_text.split())  # Remove espaços extras novamente
     
     if len(clean_text) < 3:
         return {'error': 'Descrição inválida após limpeza. Use apenas caracteres simples.'}
     
-    print(f"CalorieNinjas Query: '{clean_text}'")
+    print(f"API Ninjas Query: '{clean_text}'")
     
     headers = {
-        'X-Api-Key': CALORIENINJAS_API_KEY
+        'X-Api-Key': NUTRITION_API_KEY
     }
     
     # Usa concatenação direta na URL como na documentação oficial
-    # https://api.calorieninjas.com/v1/nutrition?query=1lb beef
-    url = f"{CALORIENINJAS_API_URL}?query={quote(clean_text)}"
-    print(f"CalorieNinjas URL: {url}")
+    # https://api.api-ninjas.com/v1/nutrition?query=1lb beef
+    url = f"{NUTRITION_API_URL}?query={quote(clean_text)}"
+    print(f"API Ninjas URL: {url}")
     
     try:
         response = requests.get(url, headers=headers, timeout=30)
-        print(f"CalorieNinjas Status: {response.status_code}")
+        print(f"API Ninjas Status: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            items = result.get('items', [])
+            # API Ninjas retorna uma lista diretamente, não um objeto com 'items'
+            items = result if isinstance(result, list) else result.get('items', [])
             print(f"Itens encontrados: {len(items)}")
             
             # Se não encontrou itens, retorna erro específico
@@ -227,22 +230,22 @@ def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
             
             return nutrients
         elif response.status_code == 401:
-            print(f"Erro CalorieNinjas API: Autenticação falhou")
-            return {'error': 'Chave de API CalorieNinjas inválida. Verifique a configuração.'}
+            print(f"Erro API Ninjas: Autenticação falhou")
+            return {'error': 'Chave de API inválida. Verifique a configuração de APININJAS_KEY.'}
         elif response.status_code == 400:
-            print(f"Erro CalorieNinjas API 400: {response.text}")
+            print(f"Erro API Ninjas 400: {response.text}")
             return {
                 'error': f'A API não conseguiu processar a consulta. Tente simplificar a descrição.',
                 'query_sent': clean_text
             }
         else:
-            print(f"Erro CalorieNinjas API: {response.status_code} - {response.text}")
+            print(f"Erro API Ninjas: {response.status_code} - {response.text}")
             return {
-                'error': f'Erro na API CalorieNinjas (código {response.status_code}). Tente novamente.',
+                'error': f'Erro na API Ninjas (código {response.status_code}). Tente novamente.',
                 'query_sent': clean_text
             }
     except requests.exceptions.Timeout:
-        print("Timeout na chamada CalorieNinjas API")
+        print("Timeout na chamada API Ninjas")
         return {'error': 'Timeout na consulta. A API demorou muito para responder. Tente novamente.'}
     except Exception as e:
         print(f"Exceção ao chamar CalorieNinjas API: {e}")

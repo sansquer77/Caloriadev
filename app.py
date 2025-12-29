@@ -167,17 +167,17 @@ def show_sidebar():
         # Status das APIs
         with st.expander("🔧 Status do Sistema", expanded=False):
             perplexity_key = os.getenv('PERPLEXITY_API_KEY')
-            calorieninjas_key = os.getenv('CALORIENINJAS_API_KEY')
+            nutrition_key = os.getenv('APININJAS_KEY') or os.getenv('CALORIENINJAS_API_KEY')
             
             if perplexity_key:
                 st.success("✅ Perplexity API")
             else:
                 st.error("❌ Perplexity API")
             
-            if calorieninjas_key:
-                st.success("✅ CalorieNinjas API")
+            if nutrition_key:
+                st.success("✅ API Ninjas (Nutrition)")
             else:
-                st.error("❌ CalorieNinjas API")
+                st.error("❌ API Ninjas (Nutrition)")
             
             if BACKUP_AVAILABLE:
                 st.success("✅ Módulo Backup")
