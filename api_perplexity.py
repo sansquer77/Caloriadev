@@ -149,110 +149,129 @@ def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
         print(f"Exceção ao chamar Perplexity API: {e}")
     return None
 
-def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
-    """Analisa texto descrevendo alimentos usando API Ninjas Nutrition API."""
-    if not NUTRITION_API_KEY:
-        print("Erro: API Key não configurada")
-        return {'error': 'Chave de API não configurada. Configure APININJAS_KEY.'}
+def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
+    """
+    Analisa refeição usando APENAS Perplexity AI para obter dados nutricionais.
+    Não depende de APIs externas de nutrição.
+    """
+    if not PERPLEXITY_API_KEY:
+        print("Erro: PERPLEXITY_API_KEY não configurada")
+        return {'error': 'Chave de API Perplexity não configurada.'}
     
     if not meal_text or len(meal_text.strip()) < 3:
         print("Erro: Descrição muito curta")
         return {'error': 'Descrição muito curta. Forneça mais detalhes sobre os alimentos.'}
     
-    # Limpa o texto - remove caracteres problemáticos
-    clean_text = meal_text.strip()
-    clean_text = ' '.join(clean_text.split())  # Remove espaços extras
-    clean_text = clean_text.replace('\n', ' and ').replace('\r', '')
-    
-    # Remove caracteres que não são ASCII básico (emojis, acentos, etc)
-    # API Ninjas funciona melhor com ASCII puro
-    clean_text = clean_text.encode('ascii', 'ignore').decode('ascii')
-    clean_text = ' '.join(clean_text.split())  # Remove espaços extras novamente
-    
-    if len(clean_text) < 3:
-        return {'error': 'Descrição inválida após limpeza. Use apenas caracteres simples.'}
-    
-    print(f"API Ninjas Query: '{clean_text}'")
-    
     headers = {
-        'X-Api-Key': NUTRITION_API_KEY
+        'Authorization': f'Bearer {PERPLEXITY_API_KEY}',
+        'Content-Type': 'application/json'
     }
     
-    # Usa concatenação direta na URL como na documentação oficial
-    # https://api.api-ninjas.com/v1/nutrition?query=1lb beef
-    url = f"{NUTRITION_API_URL}?query={quote(clean_text)}"
-    print(f"API Ninjas URL: {url}")
+    prompt = f"""Você é um nutricionista especialista. Analise a seguinte refeição e forneça os valores nutricionais ESTIMADOS.
+
+Refeição: {meal_text}
+
+Responda APENAS em formato JSON válido, sem explicações adicionais. Use este formato exato:
+{{
+    "items": ["item1", "item2"],
+    "calories": 0,
+    "protein": 0,
+    "fat_total": 0,
+    "fat_saturated": 0,
+    "carbs": 0,
+    "sugar": 0,
+    "fiber": 0,
+    "sodium": 0
+}}
+
+Onde:
+- items: lista dos alimentos identificados
+- calories: calorias totais (kcal)
+- protein: proteínas em gramas
+- fat_total: gorduras totais em gramas
+- fat_saturated: gorduras saturadas em gramas
+- carbs: carboidratos totais em gramas
+- sugar: açúcares em gramas
+- fiber: fibras em gramas
+- sodium: sódio em miligramas
+
+Seja preciso nas estimativas baseando-se em tabelas nutricionais padrão (TACO, USDA)."""
+
+    data = {
+        "model": "llama-3.1-sonar-small-128k-online",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 500,
+        "temperature": 0.1
+    }
     
     try:
-        response = requests.get(url, headers=headers, timeout=30)
-        print(f"API Ninjas Status: {response.status_code}")
+        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=30)
+        print(f"Perplexity Nutrition Status: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            # API Ninjas retorna uma lista diretamente, não um objeto com 'items'
-            items = result if isinstance(result, list) else result.get('items', [])
-            print(f"Itens encontrados: {len(items)}")
-            
-            # Se não encontrou itens, retorna erro específico
-            if not items:
-                print(f"Nenhum item encontrado para: {clean_text}")
-                return {'error': f'Nenhum alimento encontrado para "{meal_text}". Tente descrever os alimentos de forma diferente (ex: "100g chicken breast, 1 cup rice").'}
-            
-            # Inicializa todos os nutrientes
-            nutrients = {
-                'calories': 0.0,
-                'protein': 0.0,
-                'fat_total': 0.0,
-                'fat_saturated': 0.0,
-                'fat_polyunsaturated': 0.0,
-                'fat_monounsaturated': 0.0,
-                'carbs': 0.0,
-                'sugar': 0.0,
-                'fiber': 0.0,
-                'sodium': 0.0,
-                'potassium': 0.0,
-                'cholesterol': 0.0,
-                'items_detected': []
-            }
-            
-            for item in items:
-                nutrients['calories'] += float(item.get('calories', 0))
-                nutrients['protein'] += float(item.get('protein_g', 0))
-                nutrients['fat_total'] += float(item.get('fat_total_g', 0))
-                nutrients['fat_saturated'] += float(item.get('fat_saturated_g', 0))
-                nutrients['carbs'] += float(item.get('carbohydrates_total_g', 0))
-                nutrients['sugar'] += float(item.get('sugar_g', 0))
-                nutrients['fiber'] += float(item.get('fiber_g', 0))
-                nutrients['sodium'] += float(item.get('sodium_mg', 0))
-                nutrients['potassium'] += float(item.get('potassium_mg', 0))
-                nutrients['cholesterol'] += float(item.get('cholesterol_mg', 0))
-                nutrients['items_detected'].append(item.get('name', 'desconhecido'))
-            
-            return nutrients
-        elif response.status_code == 401:
-            print(f"Erro API Ninjas: Autenticação falhou")
-            return {'error': 'Chave de API inválida. Verifique a configuração de APININJAS_KEY.'}
-        elif response.status_code == 400:
-            print(f"Erro API Ninjas 400: {response.text}")
-            return {
-                'error': f'A API não conseguiu processar a consulta. Tente simplificar a descrição.',
-                'query_sent': clean_text
-            }
+            if 'choices' in result and len(result['choices']) > 0:
+                content = result['choices'][0].get('message', {}).get('content', '')
+                print(f"Perplexity Response: {content[:200]}...")
+                
+                # Extrai JSON da resposta
+                try:
+                    # Tenta encontrar JSON na resposta
+                    import re
+                    json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+                    if json_match:
+                        nutrition_data = json.loads(json_match.group())
+                    else:
+                        nutrition_data = json.loads(content)
+                    
+                    # Converte para nosso formato padrão
+                    nutrients = {
+                        'calories': float(nutrition_data.get('calories', 0)),
+                        'protein': float(nutrition_data.get('protein', 0)),
+                        'fat_total': float(nutrition_data.get('fat_total', 0)),
+                        'fat_saturated': float(nutrition_data.get('fat_saturated', 0)),
+                        'fat_polyunsaturated': 0.0,
+                        'fat_monounsaturated': 0.0,
+                        'carbs': float(nutrition_data.get('carbs', 0)),
+                        'sugar': float(nutrition_data.get('sugar', 0)),
+                        'fiber': float(nutrition_data.get('fiber', 0)),
+                        'sodium': float(nutrition_data.get('sodium', 0)),
+                        'potassium': 0.0,
+                        'cholesterol': 0.0,
+                        'items_detected': nutrition_data.get('items', [meal_text]),
+                        'source': 'Perplexity AI (estimativa)'
+                    }
+                    
+                    print(f"Nutrientes extraídos: {nutrients}")
+                    return nutrients
+                    
+                except json.JSONDecodeError as e:
+                    print(f"Erro ao parsear JSON: {e}")
+                    print(f"Conteúdo: {content}")
+                    return {'error': 'Não foi possível processar a resposta da IA. Tente novamente.'}
         else:
-            print(f"Erro API Ninjas: {response.status_code} - {response.text}")
-            return {
-                'error': f'Erro na API Ninjas (código {response.status_code}). Tente novamente.',
-                'query_sent': clean_text
-            }
+            print(f"Erro Perplexity API: {response.status_code} - {response.text}")
+            return {'error': f'Erro na API Perplexity (código {response.status_code}).'}
+            
     except requests.exceptions.Timeout:
-        print("Timeout na chamada API Ninjas")
-        return {'error': 'Timeout na consulta. A API demorou muito para responder. Tente novamente.'}
+        return {'error': 'Timeout na consulta. Tente novamente.'}
     except Exception as e:
-        print(f"Exceção ao chamar CalorieNinjas API: {e}")
+        print(f"Exceção: {e}")
         return {'error': f'Erro inesperado: {str(e)}'}
 
+
+def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
+    """
+    Analisa texto descrevendo alimentos.
+    Usa Perplexity AI diretamente (sem depender de APIs de nutrição externas).
+    """
+    return analyze_meal_with_perplexity(meal_text)
+
+
 def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
-    """Analisa foto de refeição: identifica itens e calcula nutrientes."""
+    """Analisa foto de refeição: identifica itens e calcula nutrientes usando Perplexity."""
     description = identify_items_perplexity(image_bytes)
     if not description:
         print("Não foi possível identificar itens na imagem.")
@@ -266,40 +285,18 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
     
     return nutrients
 
+
 def analyze_meal_by_description(description: str) -> Optional[Dict]:
-    """Analisa refeição por descrição textual (sem foto).
-    Traduz automaticamente do português para inglês antes de consultar CalorieNinjas."""
-    
-    # Guarda a descrição original em português
+    """
+    Analisa refeição por descrição textual.
+    O Perplexity entende português diretamente, não precisa traduzir.
+    """
     original_description = description.strip()
     
-    # Detecta se parece ser português e traduz se necessário
-    # Palavras comuns em descrições de comida em português
-    portuguese_indicators = [
-        'de ', 'com ', 'arroz', 'feijão', 'frango', 'carne', 'salada', 
-        'suco', 'pão', 'leite', 'ovo', 'batata', 'macarrão', 'queijo',
-        'grelhado', 'frito', 'assado', 'cozido', 'porção', 'prato',
-        'colher', 'xícara', 'copo', 'fatia', 'pedaço', 'tigela'
-    ]
-    
-    text_lower = original_description.lower()
-    is_portuguese = any(word in text_lower for word in portuguese_indicators)
-    
-    if is_portuguese:
-        print(f"Detectado português, traduzindo: {original_description}")
-        translated = translate_food_to_english(original_description)
-        query_text = translated if translated else original_description
-    else:
-        print(f"Texto parece estar em inglês: {original_description}")
-        query_text = original_description
-    
-    # Consulta CalorieNinjas com o texto traduzido
-    nutrients = analyze_meal_by_text(query_text)
+    # Perplexity entende português, então passamos direto
+    nutrients = analyze_meal_by_text(original_description)
     
     if nutrients and 'error' not in nutrients:
-        # Guarda a descrição original (em português) para exibição ao usuário
         nutrients['description'] = original_description
-        # Guarda também o que foi enviado para a API (para debug)
-        nutrients['query_sent'] = query_text
     
     return nutrients

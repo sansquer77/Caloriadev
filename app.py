@@ -167,17 +167,11 @@ def show_sidebar():
         # Status das APIs
         with st.expander("🔧 Status do Sistema", expanded=False):
             perplexity_key = os.getenv('PERPLEXITY_API_KEY')
-            nutrition_key = os.getenv('APININJAS_KEY') or os.getenv('CALORIENINJAS_API_KEY')
             
             if perplexity_key:
-                st.success("✅ Perplexity API")
+                st.success("✅ Perplexity API (Análise + Nutrição)")
             else:
                 st.error("❌ Perplexity API")
-            
-            if nutrition_key:
-                st.success("✅ API Ninjas (Nutrition)")
-            else:
-                st.error("❌ API Ninjas (Nutrition)")
             
             if BACKUP_AVAILABLE:
                 st.success("✅ Módulo Backup")
@@ -337,10 +331,10 @@ def show_analysis_page():
             
             # Mostra o que foi enviado à API para debug
             if nutrients.get('query_sent'):
-                with st.expander("🔍 Ver consulta enviada à API"):
+                with st.expander("🔍 Ver consulta enviada"):
                     st.code(nutrients['query_sent'], language="text")
             
-            st.info("💡 Dica: Tente descrever os alimentos em inglês com quantidades (ex: '100g chicken breast, 1 cup cooked rice, 50g broccoli')")
+            st.info("💡 Dica: Tente descrever os alimentos com mais detalhes e quantidades (ex: '100g de frango grelhado, 1 xícara de arroz, salada de alface')")
             return
         
         if nutrients:
