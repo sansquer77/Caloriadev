@@ -11,6 +11,13 @@ import json
 import re
 from typing import Optional, Dict, List, Tuple
 
+# Carregar variáveis de ambiente do arquivo .env (se existir)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv não instalado, usar apenas variáveis de ambiente do sistema
+
 # Importar módulo TACO
 try:
     from taco_db import get_taco_nutrition, search_taco, init_taco_db, get_taco_stats
@@ -161,6 +168,14 @@ IMPORTANTE:
                             except:
                                 pass
                         return None
+        elif response.status_code == 400:
+            error_data = response.json()
+            error_msg = error_data.get('error', {}).get('message', '')
+            if 'API key not valid' in error_msg:
+                print("ERRO: Chave da API Gemini inválida!")
+                return {'type': 'error', 'error': 'Chave da API Gemini inválida. Verifique se a GEMINI_KEY está correta no arquivo .env'}
+            print(f"Erro Gemini API 400: {error_msg}")
+            return None
         else:
             print(f"Erro Gemini API: {response.status_code} - {response.text}")
             return None
@@ -674,6 +689,14 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
     Returns:
         Dicionário com dados nutricionais ou erro
     """
+    # Verificar se a chave Gemini está configurada
+    if not GEMINI_API_KEY:
+        return {
+            'error': 'Chave da API Gemini (GEMINI_KEY) não configurada. '
+                     'Configure a variável de ambiente ou adicione ao arquivo .env. '
+                     'Obtenha sua chave em: https://aistudio.google.com/apikey'
+        }
+    
     # Usar Gemini para analisar a imagem
     gemini_result = identify_items_gemini(image_bytes)
     
@@ -682,6 +705,10 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
         return {'error': 'Não foi possível identificar os alimentos na imagem. Verifique se a foto está clara e tente novamente.'}
     
     result_type = gemini_result.get('type', 'unknown')
+    
+    # Caso 0: Erro de API (ex: chave inválida)
+    if result_type == 'error':
+        return {'error': gemini_result.get('error', 'Erro na API Gemini.')}
     
     # Caso 1: Erro ou desconhecido
     if result_type == 'unknown':
