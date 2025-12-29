@@ -267,3 +267,12 @@ def get_db_session():
 def get_session():
     """Alias compatível para `get_db_session()`."""
     return get_db_session()
+
+
+# ===== EXPORTAR SQLITE_PATH PARA COMPATIBILIDADE =====
+# Converte DATABASE_URL para caminho de arquivo se for SQLite
+SQLITE_PATH = DATABASE_URL
+if SQLITE_PATH.startswith('sqlite:///'):
+    SQLITE_PATH = SQLITE_PATH.replace('sqlite:///', '')
+elif SQLITE_PATH.startswith('sqlite://'):
+    SQLITE_PATH = SQLITE_PATH.replace('sqlite://', '')
