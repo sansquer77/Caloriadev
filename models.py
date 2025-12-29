@@ -1,9 +1,17 @@
+"""
+Módulo de modelos de dados - dataclasses para transferência de dados.
+
+Define estruturas imutáveis para representar usuários, refeições e localizações,
+garantindo tipagem e validação de dados.
+"""
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Optional, List
 
+
 @dataclass
 class UserData:
+    """Dados do usuário para transferência entre camadas."""
     username: str
     weight: float
     height: float
@@ -13,8 +21,10 @@ class UserData:
     carbs_limit: float
     sugar_limit: float
 
+
 @dataclass
 class MealData:
+    """Dados de uma refeição para registro no banco."""
     user_id: int
     date: date
     meal_type: str
@@ -35,8 +45,10 @@ class MealData:
     created_at: datetime = field(default_factory=datetime.now)
     items_detected: List[str] = field(default_factory=list)
 
+
 @dataclass
 class LocationData:
+    """Dados de geolocalização de uma refeição."""
     latitude: float
     longitude: float
     name: str = ""

@@ -1,12 +1,25 @@
+"""
+Módulo de armazenamento - funções de persistência de dados.
+
+Este módulo gerencia todas as operações CRUD com o banco de dados,
+incluindo refeições, usuários e agregações de macronutrientes.
+"""
 from datetime import date, timedelta, datetime
 from sqlalchemy import func, and_
-from db import Session, Meal, User, get_session
+from db import Session, Meal, User, get_session, get_db_session
 from typing import Optional, List, Dict, Tuple
 
 def save_meal(meal_data) -> int:
-    """Salva registro do prato analisado no banco e retorna o ID."""
-    session = get_session()
-    try:
+    """
+    Salva registro do prato analisado no banco e retorna o ID.
+    
+    Args:
+        meal_data: Objeto com dados da refeição (MealData ou similar)
+        
+    Returns:
+        ID da refeição salva
+    """
+    with get_db_session() as session:
         meal = Meal(
             user_id=meal_data.user_id,
             date=meal_data.date,
@@ -29,15 +42,11 @@ def save_meal(meal_data) -> int:
         )
         session.add(meal)
         session.commit()
-        meal_id = meal.id
-        return meal_id
-    finally:
-        session.close()
+        return meal.id
 
 def get_daily_macros(user_id: int, date_: date) -> Dict[str, float]:
     """Retorna dados macro por dia somados."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         result = session.query(
             func.sum(Meal.calories).label('calories'),
             func.sum(Meal.protein).label('protein'),
@@ -60,13 +69,10 @@ def get_daily_macros(user_id: int, date_: date) -> Dict[str, float]:
             'sugar': result.sugar or 0,
             'fiber': result.fiber or 0
         }
-    finally:
-        session.close()
 
 def get_aggregated_macros(user_id: int, start_date: date, end_date: date) -> Dict[str, float]:
     """Agrega macros por período (semana ou mês)."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         result = session.query(
             func.sum(Meal.calories).label('calories'),
             func.sum(Meal.protein).label('protein'),
@@ -90,13 +96,10 @@ def get_aggregated_macros(user_id: int, start_date: date, end_date: date) -> Dic
             'sugar': result.sugar or 0,
             'fiber': result.fiber or 0
         }
-    finally:
-        session.close()
 
 def get_meals_with_location(user_id: int, start_date: date = None, end_date: date = None) -> List[Dict]:
     """Retorna refeições com dados de localização para exibição em mapa."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         query = session.query(Meal).filter(
             Meal.user_id == user_id,
             Meal.latitude.isnot(None),
@@ -125,13 +128,10 @@ def get_meals_with_location(user_id: int, start_date: date = None, end_date: dat
             'location_name': meal.location_name,
             'created_at': meal.created_at
         } for meal in meals]
-    finally:
-        session.close()
 
 def get_user_meals(user_id: int, limit: int = 50) -> List[Dict]:
     """Retorna as últimas refeições do usuário."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         meals = session.query(Meal).filter(
             Meal.user_id == user_id
         ).order_by(Meal.created_at.desc()).limit(limit).all()
@@ -153,16 +153,13 @@ def get_user_meals(user_id: int, limit: int = 50) -> List[Dict]:
             'location_name': meal.location_name,
             'created_at': meal.created_at
         } for meal in meals]
-    finally:
-        session.close()
 
 def create_user(username: str, password_hash: str, weight: float = None, height: float = None,
                 cal_limit: float = None, protein_limit: float = None, fat_limit: float = None,
                 carbs_limit: float = None, sugar_limit: float = None, birth_date = None,
                 protein_pct: float = None, fat_pct: float = None, carbs_pct: float = None) -> int:
     """Cadastra um novo usuário no banco e retorna o ID."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         user = User(
             username=username,
             password_hash=password_hash,
@@ -180,15 +177,11 @@ def create_user(username: str, password_hash: str, weight: float = None, height:
         )
         session.add(user)
         session.commit()
-        user_id = user.id
-        return user_id
-    finally:
-        session.close()
+        return user.id
 
 def get_user_by_username(username: str) -> Optional[Dict]:
     """Busca usuário por username."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         user = session.query(User).filter(User.username == username).first()
         if user:
             return {
@@ -204,13 +197,10 @@ def get_user_by_username(username: str) -> Optional[Dict]:
                 'sugar_limit': user.sugar_limit
             }
         return None
-    finally:
-        session.close()
 
 def get_user_by_id(user_id: int) -> Optional[Dict]:
     """Busca usuário por ID."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         user = session.query(User).filter(User.id == user_id).first()
         if user:
             return {
@@ -229,13 +219,10 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
                 'carbs_pct': user.carbs_pct or 45.0
             }
         return None
-    finally:
-        session.close()
 
 def update_user_profile(user_id: int, **kwargs) -> bool:
     """Atualiza o perfil do usuário."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         user = session.query(User).filter(User.id == user_id).first()
         if user:
             for key, value in kwargs.items():
@@ -244,26 +231,20 @@ def update_user_profile(user_id: int, **kwargs) -> bool:
             session.commit()
             return True
         return False
-    finally:
-        session.close()
 
 def update_user_password(user_id: int, new_password_hash: str) -> bool:
     """Atualiza a senha do usuário."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         user = session.query(User).filter(User.id == user_id).first()
         if user:
             user.password_hash = new_password_hash
             session.commit()
             return True
         return False
-    finally:
-        session.close()
 
 def delete_meal(meal_id: int, user_id: int) -> bool:
     """Remove uma refeição do histórico."""
-    session = get_session()
-    try:
+    with get_db_session() as session:
         meal = session.query(Meal).filter(
             Meal.id == meal_id,
             Meal.user_id == user_id
@@ -273,5 +254,3 @@ def delete_meal(meal_id: int, user_id: int) -> bool:
             session.commit()
             return True
         return False
-    finally:
-        session.close()

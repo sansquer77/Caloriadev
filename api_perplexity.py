@@ -1,10 +1,14 @@
+"""
+Módulo de integração com APIs de nutrição.
+Fluxo: TACO (local) → Open Food Facts (API gratuita) → Perplexity AI (fallback)
+"""
+
 import base64
 import requests
 import os
 import json
 import re
 from typing import Optional, Dict, List, Tuple
-from urllib.parse import quote
 
 # Importar módulo TACO
 try:
@@ -22,100 +26,42 @@ except ImportError:
     OPENFOODFACTS_AVAILABLE = False
     print("Módulo Open Food Facts não disponível")
 
+# Configurações da API Perplexity
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions'
+PERPLEXITY_MODEL = 'sonar'
+PERPLEXITY_VISION_MODEL = 'llama-3.1-sonar-small-128k-online'
+
+# Timeouts para requisições (em segundos)
+API_TIMEOUT_SHORT = 20
+API_TIMEOUT_LONG = 45
 
 
 def encode_image_to_base64(image_bytes: bytes) -> str:
+    """Codifica imagem em base64 para envio à API."""
     return base64.b64encode(image_bytes).decode('utf-8')
 
-def translate_food_to_english(food_description: str) -> Optional[str]:
-    """
-    Traduz descrição de alimentos do português para inglês usando Perplexity.
-    Mantém quantidades no formato correto.
-    """
-    if not PERPLEXITY_API_KEY:
-        print("Aviso: PERPLEXITY_API_KEY não configurada, usando descrição original")
-        return food_description
-    
-    headers = {
-        'Authorization': f'Bearer {PERPLEXITY_API_KEY}',
-        'Content-Type': 'application/json'
-    }
-    
-    prompt = f"""Traduza a seguinte descrição de alimentos do português para inglês.
-Mantenha as quantidades exatas. Use termos culinários comuns em inglês.
-Formate como uma lista simples separada por vírgulas.
-
-Exemplos de tradução:
-- "100g de arroz branco" → "100g white rice"
-- "1 prato de feijão" → "1 cup black beans"
-- "150g de frango grelhado" → "150g grilled chicken breast"
-- "salada de alface com tomate" → "lettuce salad with tomato"
-- "1 copo de suco de laranja" → "1 glass orange juice"
-- "pão francês com manteiga" → "french bread roll with butter"
-- "2 ovos fritos" → "2 fried eggs"
-- "macarrão com molho de tomate" → "pasta with tomato sauce"
-
-Descrição em português: {food_description}
-
-Responda APENAS com a tradução em inglês, sem explicações adicionais."""
-
-    data = {
-        "model": "llama-3.1-sonar-small-128k-online",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 300,
-        "temperature": 0.1
-    }
-    
-    try:
-        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=20)
-        if response.status_code == 200:
-            result = response.json()
-            if 'choices' in result and len(result['choices']) > 0:
-                message = result['choices'][0].get('message', {})
-                translation = message.get('content', '').strip()
-                
-                # Limpa a resposta - remove aspas, quebras de linha, prefixos comuns
-                translation = translation.strip('"\'')
-                translation = translation.replace('\n', ', ')
-                translation = translation.replace('  ', ' ')
-                
-                # Remove prefixos comuns que a IA pode adicionar
-                prefixes_to_remove = [
-                    'Here is the translation:', 'Translation:', 'In English:',
-                    'The translation is:', 'English:', 'Here\'s the translation:'
-                ]
-                for prefix in prefixes_to_remove:
-                    if translation.lower().startswith(prefix.lower()):
-                        translation = translation[len(prefix):].strip()
-                
-                # Limita o tamanho
-                if len(translation) > 1500:
-                    translation = translation[:1500]
-                
-                print(f"Tradução: '{food_description}' → '{translation}'")
-                return translation
-        else:
-            print(f"Erro na tradução: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"Exceção na tradução: {e}")
-    
-    # Fallback: retorna original
-    return food_description
 
 def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
-    """Identifica itens alimentares na imagem usando a API de chat da Perplexity com visão.
-    Retorna a descrição dos alimentos identificados."""
+    """
+    Identifica itens alimentares na imagem usando Perplexity com visão.
+    
+    Args:
+        image_bytes: Bytes da imagem
+    
+    Returns:
+        Descrição dos alimentos identificados ou None
+    """
+    if not PERPLEXITY_API_KEY:
+        print("Erro: PERPLEXITY_API_KEY não configurada")
+        return None
+    
     headers = {
         'Authorization': f'Bearer {PERPLEXITY_API_KEY}',
         'Content-Type': 'application/json'
     }
     img_base64 = encode_image_to_base64(image_bytes)
     
-    # Prompt modificado para retornar em inglês
     prompt = (
         "You are an expert nutritionist. Analyze this food image and identify "
         "ALL visible food items. For each item, estimate the quantity/portion. "
@@ -125,7 +71,7 @@ def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
     )
     
     data = {
-        "model": "llama-3.1-sonar-small-128k-online",
+        "model": PERPLEXITY_VISION_MODEL,
         "messages": [
             {
                 "role": "user",
@@ -148,7 +94,7 @@ def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
     }
     
     try:
-        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=30)
+        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=API_TIMEOUT_LONG)
         if response.status_code == 200:
             result = response.json()
             if 'choices' in result and len(result['choices']) > 0:
@@ -157,8 +103,12 @@ def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
                 return description.strip()
         else:
             print(f"Erro Perplexity API: {response.status_code} - {response.text}")
+    except requests.exceptions.Timeout:
+        print("Timeout ao identificar itens na imagem")
+    except requests.exceptions.RequestException as e:
+        print(f"Erro de conexão ao chamar Perplexity API: {e}")
     except Exception as e:
-        print(f"Exceção ao chamar Perplexity API: {e}")
+        print(f"Exceção inesperada ao chamar Perplexity API: {e}")
     return None
 
 def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
@@ -192,7 +142,7 @@ Retorne APENAS JSON neste formato:
 Os valores devem ser a SOMA de todos os itens. Use valores reais das tabelas nutricionais."""
 
     data = {
-        "model": "sonar",
+        "model": PERPLEXITY_MODEL,
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -201,7 +151,7 @@ Os valores devem ser a SOMA de todos os itens. Use valores reais das tabelas nut
     }
     
     try:
-        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=45)
+        response = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=API_TIMEOUT_LONG)
         print(f"Perplexity Nutrition Status: {response.status_code}")
         
         if response.status_code == 200:

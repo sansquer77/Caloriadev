@@ -1,13 +1,18 @@
+"""
+Módulo de configuração do banco de dados.
+Suporta SQLite (desenvolvimento), MySQL e PostgreSQL (produção).
+"""
+
 from sqlalchemy import create_engine, Column, Integer, Float, Date, String, ForeignKey, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from contextlib import contextmanager
 import os
 from datetime import datetime
+from typing import Generator
 
 # Configurar string de conexão via variável ambiente para segurança
 # Prioridade: DATABASE_URL > MYSQL_CONNECTION_STRING > SQLite local (fallback)
-# Formato MySQL: mysql+pymysql://usuario:senha@host:porta/database
-# Formato PostgreSQL: postgresql://usuario:senha@host:porta/database
 
 # Caminho do banco SQLite local (fallback quando não há variável de ambiente)
 SQLITE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caloria.db')
@@ -17,7 +22,7 @@ DB_URL = os.getenv(
     'DATABASE_URL', 
     os.getenv(
         'MYSQL_CONNECTION_STRING', 
-        DEFAULT_SQLITE_URL  # Fallback para SQLite local
+        DEFAULT_SQLITE_URL
     )
 )
 
@@ -27,27 +32,29 @@ if DB_URL.startswith('postgres://'):
 
 # Configurações do engine baseadas no tipo de banco
 engine_kwargs = {
-    'pool_pre_ping': True,
+    'pool_pre_ping': True,  # Verifica conexão antes de usar
 }
 
 # Configurações específicas por tipo de banco
 if 'sqlite' in DB_URL:
-    # SQLite não suporta pool_recycle e precisa de check_same_thread=False para Streamlit
     engine_kwargs['connect_args'] = {'check_same_thread': False}
 elif 'mysql' in DB_URL:
-    engine_kwargs['pool_recycle'] = 3600  # Reconecta após 1 hora
-    # Adiciona charset para MySQL
+    engine_kwargs['pool_recycle'] = 3600
+    engine_kwargs['pool_size'] = 5
+    engine_kwargs['max_overflow'] = 10
     if 'charset' not in DB_URL:
-        if '?' in DB_URL:
-            DB_URL += '&charset=utf8mb4'
-        else:
-            DB_URL += '?charset=utf8mb4'
+        DB_URL += '&charset=utf8mb4' if '?' in DB_URL else '?charset=utf8mb4'
 elif 'postgresql' in DB_URL:
     engine_kwargs['pool_recycle'] = 3600
+    engine_kwargs['pool_size'] = 5
+    engine_kwargs['max_overflow'] = 10
 
 engine = create_engine(DB_URL, **engine_kwargs)
-Session = sessionmaker(bind=engine)
+SessionFactory = sessionmaker(bind=engine)
 Base = declarative_base()
+
+# Alias para compatibilidade
+Session = SessionFactory
 
 class User(Base):
     __tablename__ = 'users'
@@ -104,10 +111,33 @@ class Meal(Base):
 
     user = relationship('User', back_populates='meals')
 
+
 def init_db():
     """Inicializa o banco de dados criando todas as tabelas."""
     Base.metadata.create_all(engine)
 
+
 def get_session():
-    """Retorna uma nova sessão do banco de dados."""
-    return Session()
+    """Retorna uma nova sessão do banco de dados (uso legado)."""
+    return SessionFactory()
+
+
+@contextmanager
+def get_db_session() -> Generator:
+    """
+    Context manager para sessões de banco de dados.
+    Garante que a sessão seja fechada corretamente e faz rollback em caso de erro.
+    
+    Uso:
+        with get_db_session() as session:
+            session.query(User).all()
+    """
+    session = SessionFactory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
