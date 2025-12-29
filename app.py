@@ -45,6 +45,16 @@ except Exception as e:
     TACO_ERROR = str(e)
     print(f"Módulo TACO não disponível: {e}")
 
+# ✅ NOVO: Importar gerenciador de cache OFF
+OFF_CACHE_AVAILABLE = False
+OFF_CACHE_ERROR = None
+try:
+    from off_cache_manager import get_off_cache_stats, get_off_cache_size, cleanup_off_cache
+    OFF_CACHE_AVAILABLE = True
+except Exception as e:
+    OFF_CACHE_ERROR = str(e)
+    print(f"Gerenciador de cache OFF não disponível: {e}")
+
 # Configuração da página
 st.set_page_config(
     page_title="Caloria - Análise Nutricional",
@@ -258,6 +268,40 @@ def show_sidebar():
                                 st.error("❌ Erro ao baixar tabela")
             else:
                 st.warning(f"⚠️ TACO: {TACO_ERROR or 'N/A'}")
+            
+            # ✅ NOVO: Status do Cache Open Food Facts
+            if OFF_CACHE_AVAILABLE:
+                off_stats = get_off_cache_stats()
+                if off_stats['status'] == 'ready':
+                    st.success(f"✅ Cache OFF ({off_stats['total_items']} itens)")
+                    
+                    with st.expander("📈 Ver detalhes do cache", expanded=False):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Items em cache", f"{off_stats['total_items']}")
+                            st.metric("Tamanho estimado", f"{off_stats['estimated_size_mb']:.1f} MB")
+                        with col2:
+                            st.metric("Total de acessos", f"{off_stats['total_hits']}")
+                            st.metric("Média/item", f"{off_stats['avg_hits_per_item']}")
+                        
+                        st.caption("Top 5 itens mais acessados:")
+                        for item, hits in off_stats['top_items'][:5]:
+                            st.text(f"  {item}: {hits} acessos")
+                        
+                        st.caption(f"Items para limpeza: {off_stats['expired_items']} (>90 dias sem acesso)")
+                        
+                        if st.button("🧹 Fazer limpeza agora", key="cleanup_off_cache"):
+                            with st.spinner("Limpando cache..."):
+                                removed = cleanup_off_cache()
+                                if removed > 0:
+                                    st.success(f"🧹 {removed} itens removidos!")
+                                else:
+                                    st.info("Cache não tinha itens para remover")
+                                st.rerun()
+                else:
+                    st.warning("⚠️ Cache OFF: não inicializado")
+            else:
+                st.warning(f"⚠️ Cache OFF: {OFF_CACHE_ERROR or 'N/A'}")
             
             if BACKUP_AVAILABLE:
                 st.success("✅ Módulo Backup")
