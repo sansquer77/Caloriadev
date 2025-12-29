@@ -3,8 +3,16 @@ import requests
 import os
 import json
 import re
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 from urllib.parse import quote
+
+# Importar módulo TACO
+try:
+    from taco_db import get_taco_nutrition, search_taco, init_taco_db, get_taco_stats
+    TACO_AVAILABLE = True
+except ImportError:
+    TACO_AVAILABLE = False
+    print("Módulo TACO não disponível")
 
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions'
@@ -247,12 +255,198 @@ Os valores devem ser a SOMA de todos os itens. Use valores reais das tabelas nut
         return {'error': f'Erro inesperado: {str(e)}'}
 
 
+def parse_food_items(meal_text: str) -> List[Tuple[str, float]]:
+    """
+    Extrai itens alimentares e suas quantidades do texto.
+    Retorna lista de tuplas (nome, quantidade_gramas).
+    """
+    items = []
+    
+    # Separar por vírgulas, "e", ponto e vírgula
+    parts = re.split(r'[,;]|\s+e\s+', meal_text.lower())
+    
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        
+        # Tentar extrair quantidade
+        quantity = 100.0  # Padrão: 100g
+        food_name = part
+        
+        # Padrões de quantidade
+        patterns = [
+            (r'(\d+(?:\.\d+)?)\s*g\s+(?:de\s+)?(.+)', lambda m: (m.group(2), float(m.group(1)))),
+            (r'(\d+(?:\.\d+)?)\s*(?:gramas?)\s+(?:de\s+)?(.+)', lambda m: (m.group(2), float(m.group(1)))),
+            (r'(\d+)\s*(?:colher(?:es)?|col\.?)\s+(?:de\s+)?(?:sopa\s+)?(?:de\s+)?(.+)', lambda m: (m.group(2), float(m.group(1)) * 15)),  # 1 colher = ~15g
+            (r'(\d+)\s*(?:colher(?:es)?|col\.?)\s+(?:de\s+)?(?:chá\s+)?(?:de\s+)?(.+)', lambda m: (m.group(2), float(m.group(1)) * 5)),  # 1 colher chá = ~5g
+            (r'(\d+)\s*(?:fatia|pedaço)s?\s+(?:de\s+)?(.+)', lambda m: (m.group(2), float(m.group(1)) * 30)),  # 1 fatia = ~30g
+            (r'(\d+)\s*(?:unidade|und\.?)s?\s+(?:de\s+)?(.+)', lambda m: (m.group(2), float(m.group(1)) * 100)),  # 1 unidade = ~100g
+            (r'(\d+)\s*(?:copo|xícara)s?\s+(?:de\s+)?(.+)', lambda m: (m.group(2), float(m.group(1)) * 240)),  # 1 copo = ~240ml/g
+            (r'(\d+)\s*(?:prato|porção|porções)s?\s+(?:de\s+)?(.+)', lambda m: (m.group(2), float(m.group(1)) * 200)),  # 1 prato = ~200g
+        ]
+        
+        for pattern, extractor in patterns:
+            match = re.search(pattern, part)
+            if match:
+                food_name, quantity = extractor(match)
+                break
+        
+        # Limpar nome do alimento
+        food_name = food_name.strip()
+        food_name = re.sub(r'^(de|do|da|com)\s+', '', food_name)
+        
+        if food_name:
+            items.append((food_name, quantity))
+    
+    return items
+
+
+def get_nutrition_from_taco(food_items: List[Tuple[str, float]]) -> Dict:
+    """
+    Busca nutrição de múltiplos itens na TACO.
+    Retorna dicionário com nutrients, found_items e not_found.
+    """
+    if not TACO_AVAILABLE:
+        return {'nutrients': {}, 'found_items': [], 'not_found': food_items}
+    
+    total_nutrients = {
+        'calories': 0.0,
+        'protein': 0.0,
+        'fat_total': 0.0,
+        'fat_saturated': 0.0,
+        'carbs': 0.0,
+        'sugar': 0.0,
+        'fiber': 0.0,
+        'sodium': 0.0,
+        'potassium': 0.0,
+        'cholesterol': 0.0
+    }
+    
+    found_items = []
+    not_found_items = []
+    
+    for food_name, quantity in food_items:
+        nutrition = get_taco_nutrition(food_name, quantity)
+        
+        if nutrition:
+            print(f"✅ TACO encontrou: {food_name} → {nutrition.get('original_name', food_name)}")
+            found_items.append({
+                'name': food_name,
+                'quantity': f"{quantity}g",
+                'matched': nutrition.get('original_name', food_name),
+                'source': 'TACO'
+            })
+            
+            for key in total_nutrients:
+                total_nutrients[key] += nutrition.get(key, 0)
+        else:
+            print(f"❌ TACO não encontrou: {food_name}")
+            not_found_items.append((food_name, quantity))
+    
+    return {
+        'nutrients': total_nutrients,
+        'found_items': found_items,
+        'not_found': not_found_items
+    }
+
+
+def get_nutrition_from_perplexity(food_items: List[Tuple[str, float]]) -> Optional[Dict]:
+    """
+    Busca nutrição de itens usando Perplexity (fallback).
+    """
+    if not food_items:
+        return None
+    
+    # Formatar texto dos itens
+    items_text = ", ".join([f"{qty}g de {name}" for name, qty in food_items])
+    
+    return analyze_meal_with_perplexity(items_text)
+
+
 def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
     """
     Analisa texto descrevendo alimentos.
-    Usa Perplexity AI diretamente (sem depender de APIs de nutrição externas).
+    
+    Fluxo:
+    1. Identifica os itens e quantidades no texto
+    2. Busca cada item na tabela TACO (fonte primária)
+    3. Para itens não encontrados, usa Perplexity (fallback)
+    4. Soma os valores nutricionais de todas as fontes
     """
-    return analyze_meal_with_perplexity(meal_text)
+    if not meal_text or len(meal_text.strip()) < 3:
+        return {'error': 'Descrição muito curta. Forneça mais detalhes sobre os alimentos.'}
+    
+    print(f"\n=== Analisando: {meal_text} ===")
+    
+    # 1. Extrair itens e quantidades
+    food_items = parse_food_items(meal_text)
+    print(f"Itens identificados: {food_items}")
+    
+    if not food_items:
+        # Se não conseguiu extrair itens, usa Perplexity direto
+        print("Não foi possível extrair itens, usando Perplexity diretamente...")
+        return analyze_meal_with_perplexity(meal_text)
+    
+    # 2. Buscar na TACO primeiro
+    taco_result = get_nutrition_from_taco(food_items)
+    
+    found_items = taco_result.get('found_items', [])
+    not_found = taco_result.get('not_found', [])
+    total_nutrients = taco_result.get('nutrients', {})
+    
+    sources = []
+    if found_items:
+        sources.append('TACO')
+    
+    # 3. Para itens não encontrados, usar Perplexity
+    if not_found:
+        print(f"Buscando no Perplexity: {not_found}")
+        perplexity_result = get_nutrition_from_perplexity(not_found)
+        
+        if perplexity_result and 'error' not in perplexity_result:
+            sources.append('Perplexity')
+            
+            # Somar nutrientes do Perplexity
+            for key in total_nutrients:
+                total_nutrients[key] = total_nutrients.get(key, 0) + perplexity_result.get(key, 0)
+            
+            # Adicionar itens encontrados pelo Perplexity
+            perplexity_items = perplexity_result.get('items_detected', [])
+            for item in perplexity_items:
+                found_items.append({
+                    'name': item if isinstance(item, str) else item.get('name', ''),
+                    'source': 'Perplexity'
+                })
+    
+    # 4. Verificar se encontrou algo
+    if not found_items and not total_nutrients.get('calories', 0):
+        # Fallback total: usar Perplexity para tudo
+        print("Nenhum item encontrado, usando Perplexity para análise completa...")
+        return analyze_meal_with_perplexity(meal_text)
+    
+    # 5. Montar resultado final
+    source_str = ' + '.join(sources) if sources else 'Estimativa'
+    
+    result = {
+        'calories': total_nutrients.get('calories', 0),
+        'protein': total_nutrients.get('protein', 0),
+        'fat_total': total_nutrients.get('fat_total', 0),
+        'fat_saturated': total_nutrients.get('fat_saturated', 0),
+        'fat_polyunsaturated': 0.0,
+        'fat_monounsaturated': 0.0,
+        'carbs': total_nutrients.get('carbs', 0),
+        'sugar': total_nutrients.get('sugar', 0),
+        'fiber': total_nutrients.get('fiber', 0),
+        'sodium': total_nutrients.get('sodium', 0),
+        'potassium': total_nutrients.get('potassium', 0),
+        'cholesterol': total_nutrients.get('cholesterol', 0),
+        'items_detected': [item.get('name', item) if isinstance(item, dict) else item for item in found_items],
+        'source': source_str
+    }
+    
+    print(f"Resultado final: {result}")
+    return result
 
 
 def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:

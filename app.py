@@ -35,6 +35,15 @@ except Exception as e:
     REPORTS_ERROR = str(e)
     print(f"Módulo reports não disponível: {e}")
 
+TACO_AVAILABLE = False
+TACO_ERROR = None
+try:
+    from taco_db import init_taco_db, get_taco_stats
+    TACO_AVAILABLE = True
+except Exception as e:
+    TACO_ERROR = str(e)
+    print(f"Módulo TACO não disponível: {e}")
+
 # Configuração da página
 st.set_page_config(
     page_title="Caloria - Análise Nutricional",
@@ -170,9 +179,26 @@ def show_sidebar():
             perplexity_key = os.getenv('PERPLEXITY_API_KEY')
             
             if perplexity_key:
-                st.success("✅ Perplexity API (Análise + Nutrição)")
+                st.success("✅ Perplexity API (Análise + Fallback)")
             else:
                 st.error("❌ Perplexity API")
+            
+            # Status da tabela TACO
+            if TACO_AVAILABLE:
+                taco_stats = get_taco_stats()
+                if taco_stats.get('status') == 'ready':
+                    st.success(f"✅ TACO ({taco_stats.get('count', 0)} alimentos)")
+                else:
+                    st.warning("⚠️ TACO não inicializada")
+                    if st.button("📥 Baixar Tabela TACO", key="init_taco"):
+                        with st.spinner("Baixando tabela TACO..."):
+                            if init_taco_db():
+                                st.success("✅ Tabela TACO baixada!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Erro ao baixar tabela")
+            else:
+                st.warning(f"⚠️ TACO: {TACO_ERROR or 'N/A'}")
             
             if BACKUP_AVAILABLE:
                 st.success("✅ Módulo Backup")
