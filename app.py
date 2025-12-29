@@ -540,21 +540,19 @@ def show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_na
 
     # Limpar formulários das abas após sucesso
     # Limpar session state para cada nutriente processado (com validacao)
-        for nutrient in nutrients:
-            if isinstance(nutrient, dict) and "name" in nutrient:
-                safe_key = safe_session_key(nutrient.get("name", "unknown"), nutrient.get("id", "default"))
-                if safe_key not in st.session_state:
-                    st.session_state[safe_key] = nutrient
-                if st.button(f"❌ Remover {nutrient.get('name', 'Item')}", key=f"remove_{safe_key}"):
-                    if safe_key in st.session_state:
-                        del st.session_state[safe_key]
-                    st.rerun()
+    for nutrient in nutrients:
+        if isinstance(nutrient, dict) and "name" in nutrient:
+            safe_key = safe_session_key(nutrient.get("name", "unknown"), nutrient.get("id", "default"))
+            if safe_key not in st.session_state:
+                st.session_state[safe_key] = nutrient
+            if st.button(f"❌ Remover {nutrient.get('name', 'Item')}", key=f"remove_{safe_key}"):
+                if safe_key in st.session_state:
+                    del st.session_state[safe_key]
+                st.rerun()
     # Resetar valores padrão para alguns campos
     st.session_state["barcode_quantity"] = 100
     st.session_state["meal_type"] = "lunch"
     st.session_state["meal_date"] = date.today()
-    st.session_state["lat_input"] = 0.0
-    st.session_state["lon_input"] = 0.0
     st.session_state["loc_name"] = ""
     # Rerun para atualizar UI
     st.experimental_rerun()
