@@ -13,10 +13,11 @@ from difflib import SequenceMatcher
 
 # Caminho do banco de dados TACO
 TACO_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taco.db')
-# URLs alternativas para download da tabela TACO
+# URLs alternativas para download da tabela TACO (a maioria dos sites bloqueiam download direto)
+# Se todas falharem, criamos uma tabela com alimentos básicos brasileiros
 TACO_URLS = [
+    "https://nepa.unicamp.br/arquivo/uploads/taco-4a-edicao/taco-4a-edicao-2/Taco4_edicao_ampliada_e_revisada.xlsx",
     "https://www.nepa.unicamp.br/taco/arquivos/taco_4_edicao_ampliada_e_revisada.xlsx",
-    "https://www.cfn.org.br/wp-content/uploads/2017/03/taco_4_edicao_ampliada_e_revisada.xlsx",
 ]
 TACO_XLSX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taco4_completo.xlsx')
 
@@ -195,12 +196,31 @@ def convert_xlsx_to_sqlite() -> bool:
     Retorna True se a conversão foi bem-sucedida.
     """
     try:
+        # Se o banco já existe e tem dados, não precisa converter
+        if os.path.exists(TACO_DB_PATH):
+            try:
+                conn = sqlite3.connect(TACO_DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM alimentos")
+                count = cursor.fetchone()[0]
+                conn.close()
+                if count > 0:
+                    print(f"Banco TACO já existe com {count} alimentos.")
+                    return True
+            except:
+                pass
+        
         if not os.path.exists(TACO_XLSX_PATH):
-            print("Arquivo TACO não encontrado. Baixando...")
-            if not download_taco_table():
+            print("Arquivo Excel TACO não encontrado. Tentando baixar...")
+            download_result = download_taco_table()
+            # Se download_taco_table criou a tabela básica, retorna True
+            if download_result and os.path.exists(TACO_DB_PATH):
+                return True
+            # Se não baixou o Excel e não criou tabela básica, falha
+            if not os.path.exists(TACO_XLSX_PATH):
                 return False
         
-        print("Convertendo TACO para SQLite...")
+        print("Convertendo TACO Excel para SQLite...")
         
         # Ler Excel - a tabela geralmente está na primeira aba
         df = pd.read_excel(TACO_XLSX_PATH, sheet_name=0)
@@ -472,27 +492,34 @@ def get_taco_nutrition(food_name: str, quantity_grams: float = 100.0) -> Optiona
 def init_taco_db() -> bool:
     """
     Inicializa o banco de dados TACO.
-    Baixa e converte a tabela se necessário.
+    Tenta baixar a tabela oficial, se falhar cria tabela básica com alimentos comuns.
     """
     if os.path.exists(TACO_DB_PATH):
-        # Verificar se está atualizado (menos de 30 dias)
+        # Verificar se já existe e está válido
         try:
             conn = sqlite3.connect(TACO_DB_PATH)
             cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM alimentos")
+            count = cursor.fetchone()[0]
             cursor.execute("SELECT updated_at FROM alimentos LIMIT 1")
             row = cursor.fetchone()
             conn.close()
             
-            if row:
+            if count > 0 and row:
                 updated_at = datetime.fromisoformat(row[0])
                 if datetime.now() - updated_at < timedelta(days=30):
-                    print("Banco TACO está atualizado.")
+                    print(f"Banco TACO está atualizado ({count} alimentos).")
                     return True
-        except:
-            pass
+        except Exception as e:
+            print(f"Erro ao verificar banco TACO: {e}")
     
-    # Baixar e converter
-    return convert_xlsx_to_sqlite()
+    # Tentar baixar e converter do Excel
+    if convert_xlsx_to_sqlite():
+        return True
+    
+    # Se falhar, criar tabela básica
+    print("Criando tabela TACO básica com alimentos brasileiros comuns...")
+    return create_basic_taco_table()
 
 
 def get_taco_stats() -> Dict:
