@@ -1,365 +1,373 @@
-"""
-Gerenciador de Cache do Open Food Facts integrado ao banco principal.
+"""🎯 Gerenciador de Cache Open Food Facts integrado ao Caloria.db
 
-✅ MELHORIAS implementadas:
-- Cache salvo em caloria.db (banco principal) - sincroniza com backup
-- Sem limite de 1500 itens (anterior)
-- Limpeza inteligente (LRU): Remove itens não acessados há 90 dias
-- Rastreamento de acesso para análise de uso
-- Opção de excluir cache do backup se quiser economizar espaço
-- Compartilhado entre todos os usuários
+Mudança importante:
+- ❌ Removido: OFF_CACHE.json em disco
+- ✅ Adicionado: Tabela open_food_facts_cache em Caloria.db
 
-Arquitetura:
-- taco.db: Apenas TACO (dados estáticos, não precisa backup)
-- caloria.db: Tudo que precisa de backup (users, meals, cache OFF)
+Benefícios:
+1. Um único arquivo de backup (Caloria.db)
+2. ACID compliance (transações seguras)
+3. Sem limite de tamanho (JSON era limitado a ~1500 itens)
+4. Sincronização automática com backup
+5. Rastreamento de acesso melhorado
+6. Limpeza automática (LRU 90 dias)
 """
 
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
 from db import get_db_session, OpenFoodFactsCache
-from sqlalchemy import and_, func
-import re
+from sqlalchemy import func, desc
+import json
 
 
-def normalize_food_name(name: str) -> str:
-    """Normaliza nome do alimento para busca confiável."""
-    if not name:
-        return ""
-    
-    # Converter para minúsculas
-    name = name.lower().strip()
-    
-    # Remover acentos
-    replacements = {
-        'á': 'a', 'à': 'a', 'ã': 'a', 'â': 'a', 'ä': 'a',
-        'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
-        'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
-        'ó': 'o', 'ò': 'o', 'õ': 'o', 'ô': 'o', 'ö': 'o',
-        'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
-        'ç': 'c', 'ñ': 'n'
-    }
-    for old, new in replacements.items():
-        name = name.replace(old, new)
-    
-    # Remover caracteres especiais
-    name = re.sub(r'[^\w\s]', '', name)
-    
-    # Remover espaços extras
-    name = ' '.join(name.split())
-    
-    return name
-
-
-def search_off_cache(food_name: Optional[str] = None, barcode: Optional[str] = None) -> Optional[Dict]:
-    """
-    Busca um alimento no cache do Open Food Facts.
-    
-    ✏️ MELHORADO:
-    - Busca no banco principal (caloria.db)
-    - Registra data de acesso para LRU (90 dias)
-    - Incrementa contador de hits
-    - Rápido com índices no banco
+def add_to_cache(food_data: dict) -> bool:
+    """Adiciona ou atualiza item no cache do OFF.
     
     Args:
-        food_name: Nome do alimento
-        barcode: Código de barras (tem prioridade)
-    
-    Returns:
-        Dict com dados nutricionais ou None
-    """
-    with get_db_session() as session:
-        cache_entry = None
-        
-        # Buscar por código de barras primeiro (mais exato)
-        if barcode:
-            barcode_clean = re.sub(r'[^0-9]', '', barcode)
-            cache_entry = session.query(OpenFoodFactsCache).filter(
-                OpenFoodFactsCache.barcode == barcode_clean
-            ).first()
-        
-        # Se não encontrou por barcode, buscar por nome
-        if not cache_entry and food_name:
-            normalized = normalize_food_name(food_name)
-            
-            # Busca exata
-            cache_entry = session.query(OpenFoodFactsCache).filter(
-                OpenFoodFactsCache.food_name == normalized
-            ).first()
-            
-            # Busca parcial se não encontrou exato
-            if not cache_entry:
-                cache_entry = session.query(OpenFoodFactsCache).filter(
-                    OpenFoodFactsCache.food_name.ilike(f'%{normalized}%')
-                ).order_by(OpenFoodFactsCache.hits.desc()).first()
-        
-        if cache_entry:
-            # Atualizar metadados de acesso
-            cache_entry.accessed_at = datetime.utcnow()
-            cache_entry.hits += 1
-            session.commit()
-            
-            # Retornar com flag de cache
-            return {
-                'name': cache_entry.product_name,
-                'brand': cache_entry.brand or '',
-                'barcode': cache_entry.barcode or '',
-                'calories': cache_entry.calories,
-                'protein': cache_entry.protein,
-                'fat_total': cache_entry.fat_total,
-                'fat_saturated': cache_entry.fat_saturated,
-                'carbs': cache_entry.carbs,
-                'sugar': cache_entry.sugar,
-                'fiber': cache_entry.fiber,
-                'sodium': cache_entry.sodium,
-                'potassium': cache_entry.potassium,
-                'cholesterol': cache_entry.cholesterol,
-                'source': 'Open Food Facts (cache)',
-                'cached': True,
-                'hits': cache_entry.hits
+        food_data: Dict com as informações do produto
+            {
+                'food_name': str,
+                'barcode': str (opcional),
+                'product_name': str,
+                'brand': str,
+                'calories': float,
+                'protein': float,
+                'fat_total': float,
+                'fat_saturated': float,
+                'carbs': float,
+                'sugar': float,
+                'fiber': float,
+                'sodium': float,
+                'potassium': float,
+                'cholesterol': float,
+                'nutrition_grade': str,
+                'serving_size': str,
+                'image_url': str
             }
-        
-        return None
-
-
-def save_to_off_cache(food_name: str, nutrition_data: Dict, barcode: Optional[str] = None) -> bool:
-    """
-    Salva um alimento no cache do Open Food Facts.
-    
-    ✏️ MELHORADO:
-    - Salva em caloria.db (banco principal)
-    - Sem limite de itens (antes: 1500)
-    - Sincroniza automaticamente com backup
-    - Campo include_in_backup permite controlar se vai para backup ou não
-    
-    Args:
-        food_name: Nome usado na busca
-        nutrition_data: Dados nutricionais
-        barcode: Código de barras (opcional)
     
     Returns:
-        True se salvou com sucesso
+        bool: True se adicionado/atualizado, False se erro
     """
     try:
         with get_db_session() as session:
-            normalized = normalize_food_name(food_name)
-            barcode_clean = re.sub(r'[^0-9]', '', barcode) if barcode else None
+            # Normalizar food_name para busca (lowercase, trim)
+            food_name_normalized = (food_data.get('food_name', '') or '').strip().lower()
             
-            # Verificar se já existe
-            existing = session.query(OpenFoodFactsCache).filter(
-                (OpenFoodFactsCache.food_name == normalized) |
-                (OpenFoodFactsCache.barcode == barcode_clean if barcode_clean else False)
+            if not food_name_normalized and not food_data.get('barcode'):
+                return False
+            
+            # Tentar encontrar por barcode (mais específico)
+            if food_data.get('barcode'):
+                cached = session.query(OpenFoodFactsCache).filter_by(
+                    barcode=food_data['barcode']
+                ).first()
+                if cached:
+                    # Atualizar
+                    cached.hits += 1
+                    cached.accessed_at = datetime.utcnow()
+                    cached.product_name = food_data.get('product_name', cached.product_name)
+                    # Atualizar nutrientes
+                    for nutrient in ['calories', 'protein', 'fat_total', 'fat_saturated',
+                                     'carbs', 'sugar', 'fiber', 'sodium', 'potassium', 'cholesterol']:
+                        if nutrient in food_data:
+                            setattr(cached, nutrient, food_data[nutrient])
+                    session.commit()
+                    return True
+            
+            # Tentar encontrar por nome normalizado
+            cached = session.query(OpenFoodFactsCache).filter(
+                func.lower(func.trim(OpenFoodFactsCache.food_name)) == food_name_normalized
             ).first()
             
-            now = datetime.utcnow()
+            if cached:
+                # Atualizar
+                cached.hits += 1
+                cached.accessed_at = datetime.utcnow()
+                if food_data.get('barcode'):
+                    cached.barcode = food_data['barcode']
+                cached.product_name = food_data.get('product_name', cached.product_name)
+                # Atualizar nutrientes
+                for nutrient in ['calories', 'protein', 'fat_total', 'fat_saturated',
+                                 'carbs', 'sugar', 'fiber', 'sodium', 'potassium', 'cholesterol']:
+                    if nutrient in food_data:
+                        setattr(cached, nutrient, food_data[nutrient])
+                session.commit()
+                return True
             
-            if existing:
-                # Atualizar registro
-                existing.product_name = nutrition_data.get('name', food_name)
-                existing.brand = nutrition_data.get('brand', '')
-                existing.calories = nutrition_data.get('calories', 0)
-                existing.protein = nutrition_data.get('protein', 0)
-                existing.fat_total = nutrition_data.get('fat_total', 0)
-                existing.fat_saturated = nutrition_data.get('fat_saturated', 0)
-                existing.carbs = nutrition_data.get('carbs', 0)
-                existing.sugar = nutrition_data.get('sugar', 0)
-                existing.fiber = nutrition_data.get('fiber', 0)
-                existing.sodium = nutrition_data.get('sodium', 0)
-                existing.potassium = nutrition_data.get('potassium', 0)
-                existing.cholesterol = nutrition_data.get('cholesterol', 0)
-                existing.nutrition_grade = nutrition_data.get('nutrition_grade', '')
-                existing.serving_size = nutrition_data.get('serving_size', '100g')
-                existing.image_url = nutrition_data.get('image_url', '')
-                existing.accessed_at = now
-                existing.hits += 1
-            else:
-                # Criar novo registro
-                new_cache = OpenFoodFactsCache(
-                    food_name=normalized,
-                    barcode=barcode_clean,
-                    product_name=nutrition_data.get('name', food_name),
-                    brand=nutrition_data.get('brand', ''),
-                    calories=nutrition_data.get('calories', 0),
-                    protein=nutrition_data.get('protein', 0),
-                    fat_total=nutrition_data.get('fat_total', 0),
-                    fat_saturated=nutrition_data.get('fat_saturated', 0),
-                    carbs=nutrition_data.get('carbs', 0),
-                    sugar=nutrition_data.get('sugar', 0),
-                    fiber=nutrition_data.get('fiber', 0),
-                    sodium=nutrition_data.get('sodium', 0),
-                    potassium=nutrition_data.get('potassium', 0),
-                    cholesterol=nutrition_data.get('cholesterol', 0),
-                    nutrition_grade=nutrition_data.get('nutrition_grade', ''),
-                    serving_size=nutrition_data.get('serving_size', '100g'),
-                    image_url=nutrition_data.get('image_url', ''),
-                    cached_at=now,
-                    accessed_at=now,
-                    include_in_backup=True
-                )
-                session.add(new_cache)
-            
+            # Criar novo item
+            new_cache = OpenFoodFactsCache(
+                food_name=food_data.get('food_name', ''),
+                barcode=food_data.get('barcode'),
+                product_name=food_data.get('product_name', ''),
+                brand=food_data.get('brand'),
+                calories=food_data.get('calories', 0),
+                protein=food_data.get('protein', 0),
+                fat_total=food_data.get('fat_total', 0),
+                fat_saturated=food_data.get('fat_saturated', 0),
+                carbs=food_data.get('carbs', 0),
+                sugar=food_data.get('sugar', 0),
+                fiber=food_data.get('fiber', 0),
+                sodium=food_data.get('sodium', 0),
+                potassium=food_data.get('potassium', 0),
+                cholesterol=food_data.get('cholesterol', 0),
+                nutrition_grade=food_data.get('nutrition_grade'),
+                serving_size=food_data.get('serving_size'),
+                image_url=food_data.get('image_url'),
+                accessed_at=datetime.utcnow()
+            )
+            session.add(new_cache)
             session.commit()
             return True
-    
+            
     except Exception as e:
-        print(f"Erro ao salvar no cache OFF: {e}")
+        print(f"❌ Erro ao adicionar item ao cache: {e}")
         return False
 
 
-def cleanup_off_cache(days_inactive: int = 90) -> int:
-    """
-    Remove itens não acessados há X dias (LRU).
+def get_from_cache(food_name: str = None, barcode: str = None) -> dict:
+    """Busca item no cache.
     
-    🚧 NOVO: Limpeza inteligente
-    - Remove automaticamente itens "frios" (90 dias sem acesso)
-    - Libera espaço do banco
-    - Não afeta backup (já foram salvos)
-    - Recarrega automaticamente quando necessário
+    Args:
+        food_name: Nome do alimento (busca parcial)
+        barcode: Código de barras (busca exata)
+    
+    Returns:
+        Dict com dados do item ou {} se não encontrado
+    """
+    try:
+        with get_db_session() as session:
+            query = session.query(OpenFoodFactsCache)
+            
+            if barcode:
+                # Busca por barcode (exata e rápida)
+                item = query.filter_by(barcode=barcode).first()
+            elif food_name:
+                # Busca por nome (normalizado)
+                food_name_normalized = food_name.strip().lower()
+                item = query.filter(
+                    func.lower(func.trim(OpenFoodFactsCache.food_name)) == food_name_normalized
+                ).first()
+            else:
+                return {}
+            
+            if item:
+                # Atualizar last access
+                item.accessed_at = datetime.utcnow()
+                item.hits += 1
+                session.commit()
+                
+                # Retornar como dict
+                return {
+                    'id': item.id,
+                    'food_name': item.food_name,
+                    'barcode': item.barcode,
+                    'product_name': item.product_name,
+                    'brand': item.brand,
+                    'calories': item.calories,
+                    'protein': item.protein,
+                    'fat_total': item.fat_total,
+                    'fat_saturated': item.fat_saturated,
+                    'carbs': item.carbs,
+                    'sugar': item.sugar,
+                    'fiber': item.fiber,
+                    'sodium': item.sodium,
+                    'potassium': item.potassium,
+                    'cholesterol': item.cholesterol,
+                    'nutrition_grade': item.nutrition_grade,
+                    'serving_size': item.serving_size,
+                    'image_url': item.image_url,
+                    'hits': item.hits
+                }
+            
+            return {}
+            
+    except Exception as e:
+        print(f"❌ Erro ao buscar item no cache: {e}")
+        return {}
+
+
+def get_off_cache_stats() -> dict:
+    """Retorna estatísticas do cache OFF.
+    
+    Returns:
+        {
+            'status': 'ready',
+            'total_items': int,
+            'total_hits': int,
+            'avg_hits_per_item': float,
+            'estimated_size_mb': float,
+            'expired_items': int,  # Sem acesso > 90 dias
+            'top_items': [(name, hits), ...]
+        }
+    """
+    try:
+        with get_db_session() as session:
+            total_items = session.query(func.count(OpenFoodFactsCache.id)).scalar() or 0
+            
+            if total_items == 0:
+                return {
+                    'status': 'ready',
+                    'total_items': 0,
+                    'total_hits': 0,
+                    'avg_hits_per_item': 0,
+                    'estimated_size_mb': 0,
+                    'expired_items': 0,
+                    'top_items': []
+                }
+            
+            # Total de acessos
+            total_hits = session.query(func.sum(OpenFoodFactsCache.hits)).scalar() or 0
+            
+            # Média de acessos por item
+            avg_hits = float(total_hits) / total_items if total_items > 0 else 0
+            
+            # Itens expirados (90 dias sem acesso)
+            cutoff_date = datetime.utcnow() - timedelta(days=90)
+            expired_items = session.query(func.count(OpenFoodFactsCache.id)).filter(
+                OpenFoodFactsCache.accessed_at < cutoff_date
+            ).scalar() or 0
+            
+            # Top 5 itens mais acessados
+            top_items = session.query(
+                OpenFoodFactsCache.product_name,
+                OpenFoodFactsCache.hits
+            ).order_by(desc(OpenFoodFactsCache.hits)).limit(5).all()
+            
+            # Estimar tamanho em MB (aproximado)
+            # Cada registro: ~500 bytes (média)
+            estimated_size_mb = (total_items * 500) / (1024 * 1024)
+            
+            return {
+                'status': 'ready',
+                'total_items': total_items,
+                'total_hits': int(total_hits),
+                'avg_hits_per_item': round(avg_hits, 2),
+                'estimated_size_mb': round(estimated_size_mb, 2),
+                'expired_items': expired_items,
+                'top_items': [(str(name), hits) for name, hits in top_items]
+            }
+            
+    except Exception as e:
+        print(f"❌ Erro ao obter estatísticas: {e}")
+        return {
+            'status': 'error',
+            'error': str(e),
+            'total_items': 0,
+            'total_hits': 0,
+            'avg_hits_per_item': 0,
+            'estimated_size_mb': 0,
+            'expired_items': 0,
+            'top_items': []
+        }
+
+
+def get_off_cache_size() -> float:
+    """Retorna tamanho estimado do cache em MB."""
+    try:
+        with get_db_session() as session:
+            total_items = session.query(func.count(OpenFoodFactsCache.id)).scalar() or 0
+            return round((total_items * 500) / (1024 * 1024), 2)
+    except:
+        return 0.0
+
+
+def cleanup_off_cache(days_inactive: int = 90) -> int:
+    """Remove itens não acessados há mais de X dias (LRU).
     
     Args:
         days_inactive: Número de dias sem acesso para remover (padrão: 90)
     
     Returns:
-        Número de itens removidos
+        int: Número de itens removidos
     """
     try:
         with get_db_session() as session:
             cutoff_date = datetime.utcnow() - timedelta(days=days_inactive)
             
-            result = session.query(OpenFoodFactsCache).filter(
+            # Contar itens a remover
+            to_remove = session.query(func.count(OpenFoodFactsCache.id)).filter(
+                OpenFoodFactsCache.accessed_at < cutoff_date
+            ).scalar() or 0
+            
+            # Remover
+            session.query(OpenFoodFactsCache).filter(
                 OpenFoodFactsCache.accessed_at < cutoff_date
             ).delete()
             
             session.commit()
+            print(f"🧹 Limpeza de cache: {to_remove} itens removidos (inativos > {days_inactive} dias)")
+            return to_remove
             
-            if result > 0:
-                print(f"🧹 Cache OFF: {result} itens removidos (não acessados há {days_inactive} dias)")
-            
-            return result
-    
     except Exception as e:
-        print(f"Erro ao limpar cache OFF: {e}")
+        print(f"❌ Erro ao limpar cache: {e}")
         return 0
 
 
-def get_off_cache_stats() -> Dict:
-    """
-    Retorna estatsticas do cache do Open Food Facts.
-    
-    📈 NOVO: Estatisticas detalhadas
-    - Total de itens
-    - Taxa de hit (acessos vs itens)
-    - Produtos mais acessados
-    - Tamanho estimado do banco
+def clear_off_cache() -> bool:
+    """Limpa TOTALMENTE o cache OFF (cuidado!).
     
     Returns:
-        Dict com estatsticas
+        bool: True se bem-sucedido
     """
     try:
         with get_db_session() as session:
-            total_items = session.query(func.count(OpenFoodFactsCache.id)).scalar()
-            total_hits = session.query(func.sum(OpenFoodFactsCache.hits)).scalar() or 0
-            
-            # Top 10 itens mais acessados
-            top_items = session.query(
-                OpenFoodFactsCache.product_name,
-                OpenFoodFactsCache.hits
-            ).order_by(OpenFoodFactsCache.hits.desc()).limit(10).all()
-            
-            # Estimar tamanho (cada item ~1-2KB)
-            estimated_size_mb = (total_items * 1.5) / 1024
-            
-            # Itens não acessados há 90 dias
-            cutoff = datetime.utcnow() - timedelta(days=90)
-            expired_items = session.query(func.count(OpenFoodFactsCache.id)).filter(
-                OpenFoodFactsCache.accessed_at < cutoff
-            ).scalar()
-            
-            return {
-                'status': 'ready',
-                'total_items': total_items,
-                'total_hits': total_hits,
-                'avg_hits_per_item': round(total_hits / max(total_items, 1), 2),
-                'estimated_size_mb': round(estimated_size_mb, 2),
-                'expired_items': expired_items,
-                'top_items': [(item[0], item[1]) for item in top_items],
-                'database': 'caloria.db',
-                'include_in_backup': True,
-                'cleanup_interval': '90 dias'
-            }
+            count = session.query(func.count(OpenFoodFactsCache.id)).scalar() or 0
+            session.query(OpenFoodFactsCache).delete()
+            session.commit()
+            print(f"⚠️  Cache OFF limpo completamente ({count} itens removidos)")
+            return True
+    except Exception as e:
+        print(f"❌ Erro ao limpar cache: {e}")
+        return False
+
+
+def get_cache_health() -> dict:
+    """Retorna informações sobre a saúde do cache.
     
+    Returns:
+        {
+            'status': 'healthy' | 'warning' | 'critical',
+            'total_items': int,
+            'expired_ratio': float,  # Porcentagem de itens expirados
+            'recommendation': str
+        }
+    """
+    try:
+        stats = get_off_cache_stats()
+        total = stats['total_items']
+        expired = stats['expired_items']
+        
+        if total == 0:
+            return {
+                'status': 'healthy',
+                'total_items': 0,
+                'expired_ratio': 0,
+                'recommendation': 'Cache vazio - aguardando primeiro acesso'
+            }
+        
+        expired_ratio = (expired / total) * 100
+        
+        if expired_ratio < 10:
+            status = 'healthy'
+            recommendation = '✅ Cache saudável'
+        elif expired_ratio < 30:
+            status = 'warning'
+            recommendation = '⚠️  Cache com muitos itens inativos - considere limpeza'
+        else:
+            status = 'critical'
+            recommendation = '🚨 Cache crítico - execute limpeza urgente'
+        
+        return {
+            'status': status,
+            'total_items': total,
+            'expired_ratio': round(expired_ratio, 2),
+            'recommendation': recommendation
+        }
+        
     except Exception as e:
         return {
             'status': 'error',
             'error': str(e),
-            'database': 'caloria.db'
+            'total_items': 0,
+            'expired_ratio': 0,
+            'recommendation': '❌ Erro ao obter saúde do cache'
         }
-
-
-def clear_off_cache() -> bool:
-    """
-    Limpa todo o cache do Open Food Facts.
-    
-    ⚠️ CUIDADO: Operação irreversível
-    - Remove todos os itens em cache
-    - Não afeta backup (já foram salvos)
-    - Será recarregado conforme necessário
-    
-    Returns:
-        True se limpou com sucesso
-    """
-    try:
-        with get_db_session() as session:
-            count = session.query(func.count(OpenFoodFactsCache.id)).scalar()
-            session.query(OpenFoodFactsCache).delete()
-            session.commit()
-            print(f"🗑️ Cache OFF limpo: {count} itens removidos")
-            return True
-    
-    except Exception as e:
-        print(f"Erro ao limpar cache OFF: {e}")
-        return False
-
-
-def get_off_cache_size() -> str:
-    """
-    Retorna o tamanho estimado do cache em formato legível.
-    
-    Returns:
-        String com tamanho (ex: "45 MB", "250 KB")
-    """
-    stats = get_off_cache_stats()
-    if stats['status'] == 'ready':
-        mb = stats['estimated_size_mb']
-        if mb < 1:
-            return f"{int(mb * 1024)} KB"
-        return f"{mb:.1f} MB"
-    return "N/A"
-
-
-def should_cleanup_cache() -> bool:
-    """
-    Verifica se cache deve ser limpo (itens expirados > 10% do total).
-    
-    Returns:
-        True se deve fazer limpeza
-    """
-    stats = get_off_cache_stats()
-    if stats['status'] == 'ready':
-        total = stats['total_items']
-        expired = stats['expired_items']
-        if total > 0 and (expired / total) > 0.1:  # 10% expirados
-            return True
-    return False
-
-
-def auto_cleanup_if_needed() -> int:
-    """
-    Faz limpeza automática se necessário.
-    Chamada automaticamente durante uso normal.
-    
-    Returns:
-        Número de itens removidos (0 se não foi necessário)
-    """
-    if should_cleanup_cache():
-        return cleanup_off_cache()
-    return 0
