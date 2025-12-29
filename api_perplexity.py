@@ -78,27 +78,30 @@ def identify_items_gemini(image_bytes: bytes) -> Optional[Dict]:
     
     img_base64 = encode_image_to_base64(image_bytes)
     
-    prompt = """Você é um nutricionista especializado em análise de alimentos.
+    prompt = """Você é um nutricionista especializado em LEITURA DE RÓTULOS NUTRICIONAIS.
 
-Analise esta imagem e siga as instruções:
+Analise esta imagem cuidadosamente:
 
-1) Se for um PRATO ou COMIDA PRONTA:
-   - Identifique o prato e os principais componentes
-   - Estime a porção de cada item em gramas
-   - Retorne JSON no formato:
-   {"type": "food", "description": "descrição do prato", "items": [{"name": "nome do alimento", "quantity_grams": 100}, ...]}
+== SE FOR UM PRODUTO COM TABELA NUTRICIONAL VISÍVEL ==
+VOCÊ DEVE LER OS NÚMEROS da tabela nutricional na imagem!
+Procure valores como: Valor energético (kcal), Carboidratos (g), Proteínas (g), Gorduras (g), Sódio (mg), etc.
 
-2) Se for um PRODUTO COM RÓTULO NUTRICIONAL:
-   - Leia a tabela nutricional da embalagem
-   - Extraia os valores EXATAMENTE como aparecem no rótulo
-   - Retorne JSON no formato:
-   {"type": "label", "product_name": "nome do produto", "brand": "marca", "serving_size": "porção em g ou ml", "nutrients": {"calories": 0, "protein": 0, "carbs": 0, "sugar": 0, "fat_total": 0, "fat_saturated": 0, "fiber": 0, "sodium": 0}}
+Retorne JSON com os valores NUMÉRICOS que você consegue ler:
+{"type": "label", "product_name": "nome", "brand": "marca", "serving_size": "porção", "nutrients": {"calories": NUMERO, "protein": NUMERO, "carbs": NUMERO, "sugar": NUMERO, "fat_total": NUMERO, "fat_saturated": NUMERO, "fiber": NUMERO, "sodium": NUMERO}}
 
-IMPORTANTE:
-- Retorne APENAS o JSON, sem explicações
-- Para comidas, seja específico: "arroz branco" ao invés de apenas "arroz"
-- Para rótulos, use os valores exatos da tabela nutricional
-- Se não conseguir identificar, retorne: {"type": "unknown", "error": "Não foi possível identificar o alimento"}"""
+EXEMPLO de resposta correta:
+{"type": "label", "product_name": "Iogurte Grego", "brand": "Vigor", "serving_size": "90g", "nutrients": {"calories": 159, "protein": 5.4, "carbs": 18, "sugar": 15, "fat_total": 7.2, "fat_saturated": 4.5, "fiber": 0, "sodium": 45}}
+
+== SE FOR UM PRATO OU COMIDA SEM RÓTULO ==
+Identifique os alimentos e estime as porções em gramas:
+{"type": "food", "description": "descrição do prato", "items": [{"name": "arroz branco", "quantity_grams": 150}, {"name": "feijão", "quantity_grams": 100}]}
+
+== REGRAS ==
+- NUNCA retorne nutrients vazio {} - sempre inclua os números que conseguir ler
+- Se não conseguir ler um valor, use 0
+- Para sódio em mg, converta para número (ex: "45mg" → 45)
+- Retorne APENAS JSON, sem explicações
+- Se não conseguir identificar: {"type": "unknown", "error": "mensagem"}"""
 
     # Preparar request para Gemini
     url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
@@ -722,6 +725,61 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
         product_name = gemini_result.get('product_name', 'Produto')
         brand = gemini_result.get('brand', '')
         
+        # Verificar se os nutrientes estão vazios ou zerados
+        has_valid_nutrients = nutrients and (
+            nutrients.get('calories', 0) > 0 or 
+            nutrients.get('carbs', 0) > 0 or 
+            nutrients.get('protein', 0) > 0
+        )
+        
+        # Se Gemini não conseguiu ler os valores, buscar no Open Food Facts
+        if not has_valid_nutrients:
+            print(f"⚠️ Gemini não extraiu nutrientes do rótulo. Buscando '{product_name}' no Open Food Facts...")
+            
+            # Montar nome de busca com marca
+            search_name = f"{product_name} {brand}".strip() if brand else product_name
+            food_items = [(search_name, 100.0)]
+            
+            # Tentar Open Food Facts
+            if OPENFOODFACTS_AVAILABLE:
+                off_result = get_nutrition_from_openfoodfacts(food_items)
+                if off_result.get('found_items'):
+                    print(f"✅ Open Food Facts encontrou nutrientes para o rótulo")
+                    off_nutrients = off_result.get('nutrients', {})
+                    
+                    result = {
+                        'calories': off_nutrients.get('calories', 0),
+                        'protein': off_nutrients.get('protein', 0),
+                        'fat_total': off_nutrients.get('fat_total', 0),
+                        'fat_saturated': off_nutrients.get('fat_saturated', 0),
+                        'fat_polyunsaturated': 0.0,
+                        'fat_monounsaturated': 0.0,
+                        'carbs': off_nutrients.get('carbs', 0),
+                        'sugar': off_nutrients.get('sugar', 0),
+                        'fiber': off_nutrients.get('fiber', 0),
+                        'sodium': off_nutrients.get('sodium', 0),
+                        'potassium': off_nutrients.get('potassium', 0),
+                        'cholesterol': off_nutrients.get('cholesterol', 0),
+                        'items_detected': [product_name],
+                        'description': f"{product_name} ({brand})" if brand else product_name,
+                        'source': 'Open Food Facts (via Gemini)',
+                        'serving_size': gemini_result.get('serving_size', '100g')
+                    }
+                    print(f"Nutrientes do OFF: {result}")
+                    return result
+            
+            # Tentar Perplexity como fallback final
+            perplexity_result = get_nutrition_from_perplexity(food_items)
+            if perplexity_result and 'error' not in perplexity_result:
+                print(f"✅ Perplexity encontrou nutrientes para o rótulo")
+                perplexity_result['items_detected'] = [product_name]
+                perplexity_result['description'] = f"{product_name} ({brand})" if brand else product_name
+                perplexity_result['source'] = 'Perplexity (via Gemini)'
+                return perplexity_result
+            
+            # Se nada funcionou, retornar erro
+            return {'error': f'Não foi possível ler os valores nutricionais do rótulo de "{product_name}". Tente descrever o produto manualmente.'}
+        
         result = {
             'calories': float(nutrients.get('calories', 0)),
             'protein': float(nutrients.get('protein', 0)),
@@ -772,15 +830,22 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
         if not food_items:
             return {'error': 'Não foi possível identificar os alimentos na imagem.'}
         
-        print(f"Itens identificados pelo Gemini: {food_items}")
+        print(f"📷 Itens identificados pelo Gemini: {food_items}")
         
         # Usar o fluxo normal: TACO → Open Food Facts → Perplexity
         # 1. Buscar na TACO primeiro
+        print(f"🔍 TACO disponível: {TACO_AVAILABLE}")
+        print(f"🔍 OFF disponível: {OPENFOODFACTS_AVAILABLE}")
         taco_result = get_nutrition_from_taco(food_items)
+        print(f"📊 TACO resultado: {taco_result}")
         
         found_items = taco_result.get('found_items', [])
         not_found = taco_result.get('not_found', [])
         total_nutrients = taco_result.get('nutrients', {})
+        
+        print(f"📊 TACO encontrados: {found_items}")
+        print(f"📊 TACO não encontrados: {not_found}")
+        print(f"📊 TACO nutrientes: {total_nutrients}")
         
         sources = []
         if found_items:
@@ -788,8 +853,9 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
         
         # 2. Para itens não encontrados na TACO, buscar no Open Food Facts
         if not_found and OPENFOODFACTS_AVAILABLE:
-            print(f"Buscando no Open Food Facts: {not_found}")
+            print(f"🔍 Buscando no Open Food Facts: {not_found}")
             off_result = get_nutrition_from_openfoodfacts(not_found)
+            print(f"📊 OFF resultado: {off_result}")
             
             off_found = off_result.get('found_items', [])
             off_not_found = off_result.get('not_found', [])
@@ -823,7 +889,12 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
                     })
         
         # 4. Montar resultado final
+        print(f"📊 Total sources: {sources}")
+        print(f"📊 Total found_items: {found_items}")
+        print(f"📊 Total nutrients: {total_nutrients}")
+        
         if not found_items and not total_nutrients.get('calories', 0):
+            print("❌ Nenhum item encontrado com calorias!")
             return {'error': 'Não foi possível encontrar informações nutricionais para os alimentos identificados.'}
         
         source_str = ' + '.join(sources) if sources else 'Gemini Vision'
