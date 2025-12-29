@@ -7,8 +7,7 @@ from nutrition_fixes import safe_session_key, process_gemini_food_items
 from models import MealData
 from storage import (
     save_meal, get_daily_macros, get_aggregated_macros, create_user,
-    get_user_by_username, get_user_meals, delete_meal,
-    get_user_by_id, update_user_profile, update_user_password
+    get_user_by_username, get_user_by_id, update_user_profile, update_user_password
 )
 from db import init_db, SQLITE_PATH
 import json
@@ -83,7 +82,8 @@ st.markdown("""
 
 # Funções auxiliares
 def init_session_state():
-    """Inicializa variáveis de sessão."""
+    """Inicializa variáveis de sessão com valores padrão."""
+    # Variáveis de autenticação
     if 'user_id' not in st.session_state:
         st.session_state.user_id = None
     if 'username' not in st.session_state:
@@ -92,6 +92,24 @@ def init_session_state():
         st.session_state.logged_in = False
     if 'current_location' not in st.session_state:
         st.session_state.current_location = None
+    
+    # Variáveis de análise (para evitar erro ao resetar)
+    if 'barcode_quantity' not in st.session_state:
+        st.session_state.barcode_quantity = 100
+    if 'meal_type' not in st.session_state:
+        st.session_state.meal_type = "lunch"
+    if 'meal_date' not in st.session_state:
+        st.session_state.meal_date = date.today()
+    if 'loc_name' not in st.session_state:
+        st.session_state.loc_name = ""
+    if 'camera' not in st.session_state:
+        st.session_state.camera = None
+    if 'upload' not in st.session_state:
+        st.session_state.upload = None
+    if 'desc_input' not in st.session_state:
+        st.session_state.desc_input = ""
+    if 'barcode_input' not in st.session_state:
+        st.session_state.barcode_input = ""
 
 def show_login_page():
     """Exibe página de login/cadastro."""
@@ -341,7 +359,7 @@ def show_analysis_page():
             "Quantidade consumida (gramas ou ml)",
             min_value=1,
             max_value=5000,
-            value=100,
+            value=st.session_state.get('barcode_quantity', 100),
             step=10,
             key="barcode_quantity",
             help="Informe a quantidade que você consumiu"
@@ -357,6 +375,7 @@ def show_analysis_page():
         meal_type = st.selectbox(
             "Tipo de refeição",
             ["breakfast", "lunch", "dinner", "snack"],
+            index=1,  # lunch é padrão
             format_func=lambda x: {
                 "breakfast": "☀️ Café da manhã",
                 "lunch": "🌤️ Almoço", 
@@ -474,23 +493,17 @@ def show_analysis_results(nutrients, meal_type, meal_date, location_name):
     st.success(f"💾 Refeição salva com sucesso! (ID: {meal_id})")
 
     # Limpar formulários das abas após sucesso
-    # Limpar session state para cada nutriente processado (com validacao)
-    for nutrient in nutrients:
-        if isinstance(nutrient, dict) and "name" in nutrient:
-            safe_key = safe_session_key(nutrient.get("name", "unknown"), nutrient.get("id", "default"))
-            if safe_key not in st.session_state:
-                st.session_state[safe_key] = nutrient
-            if st.button(f"❌ Remover {nutrient.get('name', 'Item')}", key=f"remove_{safe_key}"):
-                if safe_key in st.session_state:
-                    del st.session_state[safe_key]
-                st.rerun()
-    # Resetar valores padrão para alguns campos
-    st.session_state["barcode_quantity"] = 100
-    st.session_state["meal_type"] = "lunch"
-    st.session_state["meal_date"] = date.today()
-    st.session_state["loc_name"] = ""
-    # Rerun para atualizar UI
-    st.experimental_rerun()
+    st.divider()
+    st.markdown("### 🎉 Refeição salva! Pronto para a próxima?")
+    
+    if st.button("➕ Analisar outra refeição", use_container_width=True, type="primary"):
+        # Limpar os valores dos inputs
+        st.session_state.camera = None
+        st.session_state.upload = None
+        st.session_state.desc_input = ""
+        st.session_state.barcode_input = ""
+        st.session_state.barcode_quantity = 100
+        st.rerun()
 
 def show_daily_summary():
     """Exibe resumo diário de nutrientes."""
@@ -597,8 +610,6 @@ def show_history():
             st.rerun()
         else:
             st.error("Erro ao excluir refeição.")
-
-# map feature removed — no function here
 
 def show_backup_page():
     """Página de backup e restore do banco de dados."""
