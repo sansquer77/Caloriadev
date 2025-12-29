@@ -576,3 +576,335 @@ def list_taco_foods(limit: int = 100) -> List[str]:
         return foods
     except:
         return []
+
+
+# ============================================================
+# CACHE LOCAL PARA OPEN FOOD FACTS
+# Armazena até 1500 itens consultados para evitar chamadas
+# repetidas à API externa
+# ============================================================
+
+OFF_CACHE_LIMIT = 1500  # Limite máximo de itens no cache
+_off_cache: Dict[str, Dict] = {}  # Cache em memória
+
+
+def init_off_cache_table() -> bool:
+    """
+    Inicializa a tabela de cache do Open Food Facts no banco taco.db.
+    Retorna True se a tabela foi criada/existe.
+    """
+    try:
+        conn = sqlite3.connect(TACO_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Criar tabela de cache se não existir
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS off_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome_busca TEXT UNIQUE,
+                nome_produto TEXT,
+                marca TEXT,
+                codigo_barras TEXT,
+                calorias REAL,
+                proteina REAL,
+                gordura_total REAL,
+                gordura_saturada REAL,
+                carboidratos REAL,
+                acucar REAL,
+                fibra REAL,
+                sodio REAL,
+                potassio REAL,
+                colesterol REAL,
+                created_at TEXT,
+                hits INTEGER DEFAULT 1
+            )
+        ''')
+        
+        # Criar índice para busca rápida
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_off_nome ON off_cache(nome_busca)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_off_barcode ON off_cache(codigo_barras)')
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao criar tabela de cache OFF: {e}")
+        return False
+
+
+def get_off_cache_count() -> int:
+    """Retorna o número de itens no cache do Open Food Facts."""
+    if not os.path.exists(TACO_DB_PATH):
+        return 0
+    
+    try:
+        conn = sqlite3.connect(TACO_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM off_cache")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+    except:
+        return 0
+
+
+def search_off_cache(food_name: Optional[str] = None, barcode: Optional[str] = None) -> Optional[Dict]:
+    """
+    Busca um alimento no cache local do Open Food Facts.
+    
+    Args:
+        food_name: Nome do alimento a buscar
+        barcode: Código de barras (tem prioridade)
+    
+    Returns:
+        Dicionário com dados nutricionais ou None se não encontrado
+    """
+    global _off_cache
+    
+    # Verificar cache em memória primeiro
+    cache_key = barcode if barcode else normalize_food_name(food_name) if food_name else None
+    if cache_key is not None and cache_key in _off_cache:
+        return _off_cache[cache_key]
+    
+    if not os.path.exists(TACO_DB_PATH):
+        return None
+    
+    try:
+        conn = sqlite3.connect(TACO_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        row = None
+        
+        # Buscar por código de barras primeiro
+        if barcode:
+            cursor.execute(
+                "SELECT * FROM off_cache WHERE codigo_barras = ? LIMIT 1",
+                (barcode,)
+            )
+            row = cursor.fetchone()
+        
+        # Se não encontrou por barcode, buscar por nome
+        if not row and food_name:
+            normalized = normalize_food_name(food_name)
+            
+            # Busca exata
+            cursor.execute(
+                "SELECT * FROM off_cache WHERE nome_busca = ? LIMIT 1",
+                (normalized,)
+            )
+            row = cursor.fetchone()
+            
+            # Busca parcial se não encontrou
+            if not row:
+                cursor.execute(
+                    "SELECT * FROM off_cache WHERE nome_busca LIKE ? ORDER BY hits DESC LIMIT 1",
+                    (f"%{normalized}%",)
+                )
+                row = cursor.fetchone()
+        
+        if row:
+            # Incrementar contador de hits
+            cursor.execute(
+                "UPDATE off_cache SET hits = hits + 1 WHERE id = ?",
+                (row['id'],)
+            )
+            conn.commit()
+            
+            result = {
+                'name': row['nome_produto'],
+                'brand': row['marca'] or '',
+                'barcode': row['codigo_barras'] or '',
+                'calories': float(row['calorias'] or 0),
+                'protein': float(row['proteina'] or 0),
+                'fat_total': float(row['gordura_total'] or 0),
+                'fat_saturated': float(row['gordura_saturada'] or 0),
+                'carbs': float(row['carboidratos'] or 0),
+                'sugar': float(row['acucar'] or 0),
+                'fiber': float(row['fibra'] or 0),
+                'sodium': float(row['sodio'] or 0),
+                'potassium': float(row['potassio'] or 0),
+                'cholesterol': float(row['colesterol'] or 0),
+                'source': 'Open Food Facts (cache)',
+                'cached': True
+            }
+            
+            # Salvar no cache em memória
+            if cache_key is not None:
+                _off_cache[cache_key] = result
+            
+            conn.close()
+            return result
+        
+        conn.close()
+        return None
+        
+    except Exception as e:
+        print(f"Erro ao buscar no cache OFF: {e}")
+        return None
+
+
+def save_to_off_cache(food_name: str, nutrition_data: Dict, barcode: Optional[str] = None) -> bool:
+    """
+    Salva um alimento no cache local do Open Food Facts.
+    Respeita o limite de 1500 itens.
+    
+    Args:
+        food_name: Nome usado na busca
+        nutrition_data: Dados nutricionais retornados pela API
+        barcode: Código de barras (opcional)
+    
+    Returns:
+        True se salvou com sucesso
+    """
+    # Verificar se já atingiu o limite
+    current_count = get_off_cache_count()
+    if current_count >= OFF_CACHE_LIMIT:
+        print(f"Cache OFF atingiu limite de {OFF_CACHE_LIMIT} itens. Não salvando.")
+        return False
+    
+    # Inicializar tabela se necessário
+    init_off_cache_table()
+    
+    try:
+        conn = sqlite3.connect(TACO_DB_PATH)
+        cursor = conn.cursor()
+        
+        normalized = normalize_food_name(food_name)
+        now = datetime.now().isoformat()
+        
+        # Verificar se já existe
+        cursor.execute(
+            "SELECT id FROM off_cache WHERE nome_busca = ? OR (codigo_barras = ? AND codigo_barras IS NOT NULL AND codigo_barras != '')",
+            (normalized, barcode or '')
+        )
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Atualizar registro existente
+            cursor.execute('''
+                UPDATE off_cache SET
+                    nome_produto = ?,
+                    marca = ?,
+                    calorias = ?,
+                    proteina = ?,
+                    gordura_total = ?,
+                    gordura_saturada = ?,
+                    carboidratos = ?,
+                    acucar = ?,
+                    fibra = ?,
+                    sodio = ?,
+                    potassio = ?,
+                    colesterol = ?,
+                    hits = hits + 1
+                WHERE id = ?
+            ''', (
+                nutrition_data.get('name', food_name),
+                nutrition_data.get('brand', ''),
+                nutrition_data.get('calories', 0),
+                nutrition_data.get('protein', 0),
+                nutrition_data.get('fat_total', 0),
+                nutrition_data.get('fat_saturated', 0),
+                nutrition_data.get('carbs', 0),
+                nutrition_data.get('sugar', 0),
+                nutrition_data.get('fiber', 0),
+                nutrition_data.get('sodium', 0),
+                nutrition_data.get('potassium', 0),
+                nutrition_data.get('cholesterol', 0),
+                existing[0]
+            ))
+        else:
+            # Inserir novo registro
+            cursor.execute('''
+                INSERT INTO off_cache (
+                    nome_busca, nome_produto, marca, codigo_barras,
+                    calorias, proteina, gordura_total, gordura_saturada,
+                    carboidratos, acucar, fibra, sodio, potassio, colesterol,
+                    created_at, hits
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            ''', (
+                normalized,
+                nutrition_data.get('name', food_name),
+                nutrition_data.get('brand', ''),
+                barcode or '',
+                nutrition_data.get('calories', 0),
+                nutrition_data.get('protein', 0),
+                nutrition_data.get('fat_total', 0),
+                nutrition_data.get('fat_saturated', 0),
+                nutrition_data.get('carbs', 0),
+                nutrition_data.get('sugar', 0),
+                nutrition_data.get('fiber', 0),
+                nutrition_data.get('sodium', 0),
+                nutrition_data.get('potassium', 0),
+                nutrition_data.get('cholesterol', 0),
+                now
+            ))
+            print(f"✅ Salvo no cache OFF: {nutrition_data.get('name', food_name)} ({current_count + 1}/{OFF_CACHE_LIMIT})")
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao salvar no cache OFF: {e}")
+        return False
+
+
+def get_off_cache_stats() -> Dict:
+    """Retorna estatísticas do cache do Open Food Facts."""
+    if not os.path.exists(TACO_DB_PATH):
+        return {'status': 'not_initialized', 'count': 0, 'limit': OFF_CACHE_LIMIT}
+    
+    try:
+        conn = sqlite3.connect(TACO_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Verificar se a tabela existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='off_cache'")
+        if not cursor.fetchone():
+            conn.close()
+            return {'status': 'not_initialized', 'count': 0, 'limit': OFF_CACHE_LIMIT}
+        
+        cursor.execute("SELECT COUNT(*) FROM off_cache")
+        count = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT SUM(hits) FROM off_cache")
+        total_hits = cursor.fetchone()[0] or 0
+        
+        cursor.execute("SELECT nome_produto, hits FROM off_cache ORDER BY hits DESC LIMIT 5")
+        top_items = [(row[0], row[1]) for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return {
+            'status': 'ready',
+            'count': count,
+            'limit': OFF_CACHE_LIMIT,
+            'percentage': round(count / OFF_CACHE_LIMIT * 100, 1),
+            'total_hits': total_hits,
+            'top_items': top_items
+        }
+    except Exception as e:
+        return {'status': 'error', 'error': str(e), 'limit': OFF_CACHE_LIMIT}
+
+
+def clear_off_cache() -> bool:
+    """Limpa todo o cache do Open Food Facts."""
+    global _off_cache
+    _off_cache = {}
+    
+    if not os.path.exists(TACO_DB_PATH):
+        return True
+    
+    try:
+        conn = sqlite3.connect(TACO_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM off_cache")
+        conn.commit()
+        conn.close()
+        print("Cache OFF limpo com sucesso.")
+        return True
+    except Exception as e:
+        print(f"Erro ao limpar cache OFF: {e}")
+        return False

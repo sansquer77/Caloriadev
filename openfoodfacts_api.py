@@ -3,12 +3,22 @@ Módulo para integração com a API Open Food Facts.
 API gratuita com milhões de produtos, incluindo muitos brasileiros.
 Suporta busca por nome e código de barras.
 
+Usa cache local para evitar chamadas repetidas à API (limite: 1500 itens).
+
 Documentação: https://openfoodfacts.github.io/openfoodfacts-server/api/
 """
 
 import requests
 from typing import Optional, Dict, List
 import re
+
+# Importar funções de cache do taco_db
+try:
+    from taco_db import search_off_cache, save_to_off_cache, get_off_cache_stats, init_off_cache_table
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+    print("Cache OFF não disponível")
 
 # URL base da API Open Food Facts
 OFF_API_URL = "https://world.openfoodfacts.org/api/v2"
@@ -163,6 +173,7 @@ def _parse_product(product: Dict) -> Dict:
 def get_nutrition_openfoodfacts(food_name: str, quantity_grams: float = 100.0, barcode: Optional[str] = None) -> Optional[Dict]:
     """
     Obtém dados nutricionais do Open Food Facts.
+    Usa cache local para evitar chamadas repetidas à API.
     
     Args:
         food_name: Nome do alimento
@@ -173,20 +184,38 @@ def get_nutrition_openfoodfacts(food_name: str, quantity_grams: float = 100.0, b
         Dicionário com dados nutricionais ajustados ou None
     """
     result = None
+    from_cache = False
     
-    # Se tem código de barras, usa primeiro
-    if barcode:
-        result = search_product_by_barcode(barcode)
+    # 1. Verificar cache local primeiro
+    if CACHE_AVAILABLE:
+        cached = search_off_cache(food_name=food_name, barcode=barcode)
+        if cached:
+            print(f"📦 Cache hit: {cached.get('name', food_name)}")
+            result = cached
+            from_cache = True
     
-    # Se não encontrou por código de barras, busca por nome
+    # 2. Se não encontrou no cache, buscar na API
     if not result:
-        result = search_product_by_name(food_name)
+        # Se tem código de barras, usa primeiro
+        if barcode:
+            result = search_product_by_barcode(barcode)
+        
+        # Se não encontrou por código de barras, busca por nome
+        if not result:
+            result = search_product_by_name(food_name)
+        
+        # 3. Salvar no cache se encontrou e cache está disponível
+        if result and CACHE_AVAILABLE:
+            save_to_off_cache(food_name, result, barcode=barcode)
     
     if not result:
         return None
     
     # Ajustar para a quantidade especificada
     factor = quantity_grams / 100.0
+    
+    # Determinar a fonte
+    source = 'Open Food Facts (cache)' if from_cache else 'Open Food Facts'
     
     return {
         'name': result.get('name', food_name),
@@ -202,9 +231,10 @@ def get_nutrition_openfoodfacts(food_name: str, quantity_grams: float = 100.0, b
         'sodium': result.get('sodium', 0) * factor,
         'potassium': result.get('potassium', 0) * factor,
         'cholesterol': result.get('cholesterol', 0) * factor,
-        'source': 'Open Food Facts',
+        'source': source,
         'nutrition_grade': result.get('nutrition_grade', ''),
-        'original_name': result.get('name', '')
+        'original_name': result.get('name', ''),
+        'cached': from_cache
     }
 
 
