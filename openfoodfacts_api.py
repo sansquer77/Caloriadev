@@ -3,22 +3,28 @@ Módulo para integração com a API Open Food Facts.
 API gratuita com milhões de produtos, incluindo muitos brasileiros.
 Suporta busca por nome e código de barras.
 
-Usa cache local para evitar chamadas repetidas à API (limite: 1500 itens).
-
-Documentação: https://openfoodfacts.github.io/openfoodfacts-server/api/
+✏️ ARQUITETURA APRIMORADA:
+- Cache agora integrado em caloria.db (banco principal)
+- Sem limite de 1500 itens (anterior)
+- Limpeza automática de 90 dias (LRU)
+- Sincroniza com backup automaticamente
 """
 
 import requests
 from typing import Optional, Dict, List
 import re
 
-# Importar funções de cache do taco_db
+# Importar novo gerenciador de cache
 try:
-    from taco_db import search_off_cache, save_to_off_cache, get_off_cache_stats, init_off_cache_table
+    from off_cache_manager import (
+        search_off_cache,
+        save_to_off_cache,
+        auto_cleanup_if_needed
+    )
     CACHE_AVAILABLE = True
 except ImportError:
     CACHE_AVAILABLE = False
-    print("Cache OFF não disponível")
+    print("Gerenciador de cache OFF não disponível - usando modo sem cache")
 
 # URL base da API Open Food Facts
 OFF_API_URL = "https://world.openfoodfacts.org/api/v2"
@@ -173,7 +179,12 @@ def _parse_product(product: Dict) -> Dict:
 def get_nutrition_openfoodfacts(food_name: str, quantity_grams: float = 100.0, barcode: Optional[str] = None) -> Optional[Dict]:
     """
     Obtém dados nutricionais do Open Food Facts.
-    Usa cache local para evitar chamadas repetidas à API.
+    
+    ✏️ MELHORADO:
+    - Usa cache integrado em caloria.db
+    - Sem limite de 1500 itens (anterior)
+    - Limpeza automática (90 dias)
+    - Sincroniza com backup
     
     Args:
         food_name: Nome do alimento
@@ -186,15 +197,19 @@ def get_nutrition_openfoodfacts(food_name: str, quantity_grams: float = 100.0, b
     result = None
     from_cache = False
     
-    # 1. Verificar cache local primeiro
+    # 1. Fazer limpeza automática se necessário
+    if CACHE_AVAILABLE:
+        auto_cleanup_if_needed()
+    
+    # 2. Verificar cache local primeiro
     if CACHE_AVAILABLE:
         cached = search_off_cache(food_name=food_name, barcode=barcode)
         if cached:
-            print(f"📦 Cache hit: {cached.get('name', food_name)}")
+            print(f"📀 Cache hit: {cached.get('name', food_name)}")
             result = cached
             from_cache = True
     
-    # 2. Se não encontrou no cache, buscar na API
+    # 3. Se não encontrou no cache, buscar na API
     if not result:
         # Se tem código de barras, usa primeiro
         if barcode:
@@ -204,7 +219,7 @@ def get_nutrition_openfoodfacts(food_name: str, quantity_grams: float = 100.0, b
         if not result:
             result = search_product_by_name(food_name)
         
-        # 3. Salvar no cache se encontrou e cache está disponível
+        # 4. Salvar no cache se encontrou e cache está disponível
         if result and CACHE_AVAILABLE:
             save_to_off_cache(food_name, result, barcode=barcode)
     
@@ -248,6 +263,7 @@ def test_openfoodfacts():
     if result:
         print(f"   ✅ Encontrado: {result['name']} ({result['brand']})")
         print(f"   Calorias: {result['calories']:.0f} kcal")
+        print(f"   Fonte: {result['source']}")
     else:
         print("   ❌ Não encontrado")
     
@@ -261,8 +277,8 @@ def test_openfoodfacts():
         print("   ❌ Não encontrado")
     
     # Teste produto brasileiro
-    print("\n3. Busca por nome: 'Guaraná Antarctica'")
-    result = get_nutrition_openfoodfacts("Guaraná Antarctica", 350)
+    print("\n3. Busca por nome: 'Guarana Antarctica'")
+    result = get_nutrition_openfoodfacts("Guarana Antarctica", 350)
     if result:
         print(f"   ✅ Encontrado: {result['name']}")
         print(f"   Calorias: {result['calories']:.0f} kcal")
