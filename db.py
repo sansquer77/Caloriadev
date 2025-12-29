@@ -246,3 +246,24 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Compatibilidade com código existente: expor `Session` e helpers de sessão
+Session = SessionLocal
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def get_db_session():
+    """Context manager que fornece uma sessão SQLAlchemy."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_session():
+    """Alias compatível para `get_db_session()`."""
+    return get_db_session()
