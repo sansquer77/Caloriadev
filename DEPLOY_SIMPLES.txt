@@ -1,0 +1,236 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║           🚀 DEPLOY v2.6 EM PRODUÇÃO - PASSO A PASSO                     ║
+║                                                                           ║
+║ STATUS: App já está rodando em DigitalOcean App Platform                 ║
+║ OBJETIVO: Deploy da v2.6 com parser inteligente e análise nutricional   ║
+║ TEMPO: 3 minutos de execução + 5-10 minutos de build automático          ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🔒 PASSO 0: BACKUP (IMPORTANTE!)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Se você usa PostgreSQL:
+  1. DigitalOcean > Databases > seu-database > Backups
+  2. Clique em "Create Backup"
+  3. Aguarde terminar
+
+Se você usa SQLite local:
+  1. Baixar database atual (opcional)
+  2. Ou confiar no GitHub (histórico está lá)
+
+✅ BACKUP FEITO? Pode continuar!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 📋 PASSO 1: CONFERIR STATUS ATUAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abrir DigitalOcean:
+  1. cloud.digitalocean.com
+  2. Apps > caloriadev
+  3. Status deve estar: ✅ DEPLOYED
+  4. Anotar URL: https://seu-app-xxxx.ondigitalocean.app
+  5. Testar: Acessar URL, app deve responder
+
+✅ APP RESPONDENDO? Ótimo!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🖥️  PASSO 2: FAZER COMMIT E PUSH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No seu terminal local:
+
+  $ git add .
+  $ git commit -m "v2.6: Parser inteligente + análise nutricional com Perplexity"
+  $ git push origin main
+
+Outputs esperados:
+  ✅ Counting objects: ...
+  ✅ Compressing objects: ...
+  ✅ Writing objects: ...
+  ✅ remote: Resolving deltas: ...
+
+⏱️  Aguarde confirmação (deve levar ~5-15 segundos)
+
+✅ PUSH FEITO? Perfeito!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ⏳ PASSO 3: ACOMPANHAR BUILD (5-10 MINUTOS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abrir DigitalOcean:
+  1. Apps > caloriadev > Activity
+  
+  Estados possíveis:
+    🟡 BUILDING - App está compilando (normal, aguarde)
+    ✅ DEPLOYED - App entrou em produção (sucesso!)
+    ❌ ERROR - Algo deu errado (ver Passo 6)
+  
+  Tempo esperado: 5-10 minutos
+  
+  Dica: Atualizar página com F5 para ver status atualizado
+
+✅ STATUS = DEPLOYED? Vamos testar!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ✅ PASSO 4: TESTAR APP EM PRODUÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abrir app:
+  1. Apps > caloriadev > Live App
+  2. Clique no link (https://seu-app-xxxx.ondigitalocean.app)
+  3. App deve abrir normalmente
+
+Testar Funcionalidades:
+  
+  🍽️  REGISTRAR REFEIÇÃO
+  ├─ Clique em "Registrar Refeição"
+  ├─ Digite uma refeição:
+  │  "100g espaghetti a alho e óleo, 
+  │   1 bife médio à milanesa, 
+  │   alface, um pedaço pequeno de pudim"
+  ├─ Clique em "🔍 Analisar Refeição"
+  ├─ Resultado esperado:
+  │  ✅ 4 itens identificados
+  │  ✅ Pudim com açúcares (18.5g)
+  │  ✅ Botão "Salvar" funciona
+  └─ Salvar
+  
+  📊 VER HISTÓRICO
+  ├─ Clique em "Histórico"
+  ├─ Resultado esperado:
+  │  ✅ Tabela com sua refeição
+  │  ✅ COLUNA "FIBRAS (g)" aparece
+  │  ✅ Totais corretos
+  └─ OK
+  
+  📈 RELATORIOS
+  ├─ Clique em "Relatórios"
+  ├─ Escolha "Semanal"
+  ├─ Resultado esperado:
+  │  ✅ Métricas com fibras
+  │  ✅ Análise do Perplexity (insights)
+  │  ✅ Comparação com recomendações
+  └─ OK
+
+✅ TUDO FUNCIONANDO? Sucesso!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 📊 PASSO 5: MONITORAR LOGS (PRIMEIRA HORA)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abrir DigitalOcean:
+  1. Apps > caloriadev > Logs
+  2. Escolher: Time Range = Last 1 hour
+  
+  Procurar por:
+    ✅ [INFO] Application started
+    ✅ [INFO] Meal saved successfully
+    ❌ [ERROR] ImportError
+    ❌ [ERROR] ModuleNotFoundError
+    ❌ [ERROR] Database connection
+  
+  Se tiver [ERROR]:
+    → Ir para PASSO 6 (Rollback)
+  
+  Se NÃO tiver [ERROR]:
+    → Deployment foi sucesso!
+
+✅ SEM ERROS? Maravilhoso!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🎉 PASSO 6: CONTINUAR MONITORANDO (24 HORAS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Acompanhar nos próximos dias:
+  1. Apps > Logs (verificar diariamente)
+  2. Nenhum [ERROR] deve aparecer
+  3. App deve responder normalmente
+  4. Usuários conseguem registrar refeições
+
+Se tudo OK:
+  ✅ DEPLOYMENT FOI SUCESSO!
+  ✅ v2.6 está em produção!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ❌ PASSO 7: SE DER PROBLEMA (ROLLBACK)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Se aparecer erro após deploy:
+  
+  1. Ver o erro nos logs:
+     Apps > caloriadev > Logs
+  
+  2. Voltar para versão anterior (ROLLBACK):
+     
+     No seu terminal:
+     $ git revert HEAD
+     $ git push origin main
+     
+     No DigitalOcean:
+     - Aguardar novo deploy (5 minutos)
+     - Status deve voltar para ✅ DEPLOYED
+     - App deve funcionar como antes
+  
+  3. Investigar o problema:
+     - Ler DEPLOYMENT_SEGURO.md
+     - Ver secção Troubleshooting
+     - Ou abrir issue no GitHub
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 📚 DOCUMENTOS DISPONÍVEIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📄 DEPLOYMENT_SEGURO.md
+   └─ Guia detalhado com segurança
+      (Use se tiver tempo ou quer estar 100% seguro)
+
+📄 DIGITALOCEAN_GUIDE.md
+   └─ Guia completo DigitalOcean
+      (Use se tiver problemas ou quer entender tudo)
+
+📄 DO_QUICKFIX.md
+   └─ Checklist rápido para troubleshooting
+      (Use se der erro)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ✨ RESUMO DO QUE VOCÊ GANHA COM v2.6
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🍽️  Parser Inteligente
+   • Quebra refeição em itens individuais
+   • Cada item consultado isoladamente
+   • MUITO mais preciso (pudim agora detectado com açúcar!)
+
+💾 Itens Individuais no Banco
+   • Cada item salvo separadamente
+   • Rastreamento granular
+   • Histórico mais detalhado
+
+📊 Análise Nutricional
+   • Relatórios semanal/mensal
+   • Insights automáticos do Perplexity
+   • Comparação com recomendações
+   • Agora com FIBRAS! 🌾
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 🚀 PRÓXIMOS PASSOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Execute PASSO 2 agora: 
+   $ git add .
+   $ git commit -m "v2.6: Deploy em produção"
+   $ git push origin main
+
+2. Acompanhe PASSO 3: Build (5-10 minutos)
+
+3. Execute PASSO 4: Teste tudo funciona
+
+4. Se OK: Aproveite a v2.6! 🎉
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✨ Desenvolvido com ❤️  | Caloria Dev v2.6
+🚀 Pronto para produção!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
