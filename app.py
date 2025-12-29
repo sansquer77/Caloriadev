@@ -111,6 +111,8 @@ def init_session_state():
         st.session_state.desc_input = ""
     if 'barcode_input' not in st.session_state:
         st.session_state.barcode_input = ""
+    if 'reset_form' not in st.session_state:
+        st.session_state.reset_form = False
 
 def show_login_page():
     """Exibe página de login/cadastro."""
@@ -312,6 +314,13 @@ def show_analysis_page():
     """Página principal de análise de refeições."""
     st.markdown("## 🍽️ Análise de Refeição")
     
+    # Se reset_form for True, mostra mensagem e reseta
+    if st.session_state.reset_form:
+        st.session_state.reset_form = False
+        st.session_state.desc_input = ""
+        st.session_state.barcode_input = ""
+        st.session_state.barcode_quantity = 100
+    
     # Tabs para foto, texto ou código de barras
     tab1, tab2, tab3 = st.tabs(["📷 Tirar Foto", "✍️ Descrever Refeição", "📊 Código de Barras"])
     
@@ -319,10 +328,13 @@ def show_analysis_page():
         st.markdown("### 📷 Análise por Foto")
         st.info("💡 Tire uma foto do seu prato ou do rótulo nutricional de um produto.")
         
-        img_file = st.camera_input("Capturar foto", key="camera")
+        # Usar chave dinâmica para forçar reset
+        camera_key = "camera" if not st.session_state.reset_form else f"camera_{datetime.now().timestamp()}"
+        img_file = st.camera_input("Capturar foto", key=camera_key)
         
         # Também permite upload
-        uploaded_file = st.file_uploader("Ou faça upload de uma imagem", type=['jpg', 'jpeg', 'png'], key="upload")
+        upload_key = "upload" if not st.session_state.reset_form else f"upload_{datetime.now().timestamp()}"
+        uploaded_file = st.file_uploader("Ou faça upload de uma imagem", type=['jpg', 'jpeg', 'png'], key=upload_key)
         
         image_bytes = None
         if img_file is not None:
@@ -341,7 +353,8 @@ def show_analysis_page():
             "O que você comeu?",
             placeholder="Ex: 1 prato de arroz, 100g de frango grelhado, salada de alface com tomate\n\nPara produtos industrializados, use o nome completo: 'Suco de Maçã Yakult 200ml'",
             height=120,
-            key="desc_input"
+            key="desc_input",
+            value=st.session_state.desc_input
         )
     
     with tab3:
@@ -352,6 +365,7 @@ def show_analysis_page():
             "Código de barras",
             placeholder="Ex: 7894900011517 (Coca-Cola 350ml)",
             key="barcode_input",
+            value=st.session_state.barcode_input,
             help="Digite o código de barras do produto (EAN-13, UPC, etc.)"
         )
         
@@ -497,9 +511,9 @@ def show_analysis_results(nutrients, meal_type, meal_date, location_name):
     st.markdown("### 🎉 Refeição salva! Pronto para a próxima?")
     
     if st.button("➕ Analisar outra refeição", use_container_width=True, type="primary"):
-        # Limpar os valores dos inputs
-        st.session_state.camera = None
-        st.session_state.upload = None
+        # Ativa flag de reset
+        st.session_state.reset_form = True
+        # Resetar valores
         st.session_state.desc_input = ""
         st.session_state.barcode_input = ""
         st.session_state.barcode_quantity = 100
