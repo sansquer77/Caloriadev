@@ -277,6 +277,8 @@ def get_location_component():
                     // Salva no sessionStorage para persistência
                     sessionStorage.setItem('geo_lat', lat);
                     sessionStorage.setItem('geo_lon', lon);
+                    // Força reload para Streamlit ler os novos parâmetros
+                    setTimeout(function() { window.location.href = url.toString(); }, 500);
                 },
                 function(error) {
                     document.getElementById('geo_status').innerHTML = '❌ Erro: ' + error.message;
@@ -287,7 +289,6 @@ def get_location_component():
             document.getElementById('geo_status').innerHTML = '❌ Geolocalização não suportada';
         }
     }
-    
     // Tenta recuperar do sessionStorage
     window.onload = function() {
         const savedLat = sessionStorage.getItem('geo_lat');
