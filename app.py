@@ -8,7 +8,7 @@ from storage import (
     save_meal, get_daily_macros, get_aggregated_macros, create_user,
     get_user_by_username, get_user_meals, get_meals_with_location, delete_meal
 )
-from db import init_db
+from db import init_db, SQLITE_PATH
 import json
 import os
 
@@ -593,21 +593,69 @@ def show_backup_page():
                         st.error(f"❌ Erro ao criar backup: {str(e)}")
         
         with col2:
-            if st.button("🗄️ Criar Backup MySQL (mysqldump)", use_container_width=True):
-                with st.spinner("Executando mysqldump..."):
-                    try:
-                        filepath = mysql_dump()
-                        if filepath:
-                            st.success(f"✅ Dump MySQL criado!")
-                            st.code(filepath)
-                        else:
-                            st.warning("⚠️ mysqldump não disponível ou não é MySQL.")
-                    except Exception as e:
-                        st.error(f"❌ Erro: {str(e)}")
+            # Baixar arquivo SQLite diretamente
+            if os.path.exists(SQLITE_PATH):
+                with open(SQLITE_PATH, 'rb') as db_file:
+                    db_data = db_file.read()
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                st.download_button(
+                    "📥 Baixar Banco SQLite (.db)",
+                    data=db_data,
+                    file_name=f"caloria_backup_{timestamp}.db",
+                    mime="application/octet-stream",
+                    use_container_width=True
+                )
+            else:
+                st.warning("⚠️ Arquivo do banco de dados não encontrado.")
     
     with tab2:
         st.markdown("### Restaurar de backup")
         st.warning("⚠️ A restauração pode sobrescrever dados existentes. Faça backup antes!")
+        
+        # === RESTAURAR BANCO SQLite COMPLETO ===
+        st.markdown("#### 📥 Restaurar Banco SQLite (.db)")
+        st.info("⚠️ Isso substituirá **completamente** o banco de dados atual!")
+        
+        uploaded_db = st.file_uploader(
+            "Selecione o arquivo .db para restaurar",
+            type=['db'],
+            key="db_restore_upload"
+        )
+        
+        if uploaded_db is not None:
+            st.warning(f"📁 Arquivo selecionado: **{uploaded_db.name}** ({len(uploaded_db.getvalue()) / 1024:.1f} KB)")
+            
+            confirm_restore = st.checkbox(
+                "✅ Confirmo que desejo substituir o banco de dados atual",
+                value=False,
+                key="confirm_db_restore"
+            )
+            
+            if confirm_restore:
+                if st.button("🔄 Restaurar Banco SQLite", type="primary", key="restore_db_btn"):
+                    with st.spinner("Restaurando banco de dados..."):
+                        try:
+                            # Fazer backup do banco atual antes de sobrescrever
+                            if os.path.exists(SQLITE_PATH):
+                                backup_path = SQLITE_PATH + f".bak_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                                import shutil
+                                shutil.copy2(SQLITE_PATH, backup_path)
+                                st.info(f"💾 Backup do banco atual salvo em: {os.path.basename(backup_path)}")
+                            
+                            # Sobrescrever com o novo arquivo
+                            with open(SQLITE_PATH, 'wb') as f:
+                                f.write(uploaded_db.getvalue())
+                            
+                            st.success("✅ Banco de dados restaurado com sucesso!")
+                            st.warning("🔄 Por favor, recarregue a página para aplicar as mudanças.")
+                            st.balloons()
+                        except Exception as e:
+                            st.error(f"❌ Erro ao restaurar: {str(e)}")
+        
+        st.divider()
+        
+        # === RESTAURAR JSON ===
+        st.markdown("#### 📄 Restaurar de backup JSON")
         
         # Upload de arquivo
         uploaded_file = st.file_uploader(
