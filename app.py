@@ -590,6 +590,8 @@ def show_daily_summary():
         st.metric("🥓 Gord. Saturada", f"{macros.get('fat_saturated', 0):.1f} g")
     with col3:
         st.metric("🌾 Fibras", f"{macros.get('fiber', 0):.1f} g")
+    with col4:
+        st.metric("🧂 Sódio", f"{macros.get('sodium', 0):.1f} mg")
     
     # Resumo semanal
     st.divider()
@@ -603,14 +605,16 @@ def show_daily_summary():
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**Total da semana:**")
-        st.write(f"- Calorias: {weekly_macros.get('calories', 0):.1f} kcal")
-        st.write(f"- Proteínas: {weekly_macros.get('protein', 0):.1f} g")
-        st.write(f"- Carboidratos: {weekly_macros.get('carbs', 0):.1f} g")
+        st.write(f"- 🔥 Calorias: {weekly_macros.get('calories', 0):.1f} kcal")
+        st.write(f"- 🥩 Proteínas: {weekly_macros.get('protein', 0):.1f} g")
+        st.write(f"- 🍞 Carboidratos: {weekly_macros.get('carbs', 0):.1f} g")
+        st.write(f"- 🌾 Fibras: {weekly_macros.get('fiber', 0):.1f} g")
     with col2:
         st.markdown("**Média diária:**")
-        st.write(f"- Calorias: {weekly_macros.get('calories', 0)/7:.1f} kcal")
-        st.write(f"- Proteínas: {weekly_macros.get('protein', 0)/7:.1f} g")
-        st.write(f"- Carboidratos: {weekly_macros.get('carbs', 0)/7:.1f} g")
+        st.write(f"- 🔥 Calorias: {weekly_macros.get('calories', 0)/7:.1f} kcal")
+        st.write(f"- 🥩 Proteínas: {weekly_macros.get('protein', 0)/7:.1f} g")
+        st.write(f"- 🍞 Carboidratos: {weekly_macros.get('carbs', 0)/7:.1f} g")
+        st.write(f"- 🌾 Fibras: {weekly_macros.get('fiber', 0)/7:.1f} g")
 
 def show_history():
     """Exibe histórico de refeições."""
@@ -636,23 +640,40 @@ def show_history():
     }
     df['meal_type'] = df['meal_type'].map(meal_type_map)
     
-    # Selecionar colunas para exibição
+    # Selecionar colunas para exibição (ADICIONADO: fiber)
     display_df = df[[
         'date', 'meal_type', 'description', 'calories', 'protein', 
-        'carbs', 'fat_total', 'sugar', 'location_name'
+        'carbs', 'fat_total', 'sugar', 'fiber', 'location_name'
     ]].rename(columns={
         'date': 'Data',
         'meal_type': 'Refeição',
         'description': 'Descrição',
         'calories': 'Calorias',
         'protein': 'Proteínas (g)',
-        'carbs': 'Carboidratos (g)',
+        'carbs': 'Carbs (g)',
         'fat_total': 'Gorduras (g)',
         'sugar': 'Açúcares (g)',
+        'fiber': 'Fibras (g)',
         'location_name': 'Local'
     })
     
     st.dataframe(display_df, use_container_width=True, hide_index=True)
+    
+    # Estatísticas rápidas
+    st.divider()
+    st.markdown("### 📊 Estatísticas Nutricionais")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        st.metric("🔥 Avg Calorias", f"{df['calories'].mean():.0f} kcal")
+    with col2:
+        st.metric("🥩 Avg Proteínas", f"{df['protein'].mean():.1f} g")
+    with col3:
+        st.metric("🍞 Avg Carbs", f"{df['carbs'].mean():.1f} g")
+    with col4:
+        st.metric("🌾 Avg Fibras", f"{df['fiber'].mean():.1f} g")
+    with col5:
+        st.metric("📝 Total Refeições", len(df))
     
     # Opção de excluir
     st.divider()
@@ -984,8 +1005,8 @@ def show_reports_page():
         st.metric("🍞 Carboidratos Total", f"{macros.get('carbs', 0):.1f}g")
         st.metric("🍞 Média/dia", f"{macros.get('carbs', 0)/days:.1f}g")
     with col4:
-        st.metric("🧈 Gorduras Total", f"{macros.get('fat_total', 0):.1f}g")
-        st.metric("🧈 Média/dia", f"{macros.get('fat_total', 0)/days:.1f}g")
+        st.metric("🌾 Fibras Total", f"{macros.get('fiber', 0):.1f}g")
+        st.metric("🌾 Média/dia", f"{macros.get('fiber', 0)/days:.1f}g")
 
 
 def show_profile_page():
