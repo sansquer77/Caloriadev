@@ -472,8 +472,8 @@ def show_analysis_page():
             return
         
         if nutrients:
-            safe_nutrients = process_gemini_food_items({"type": "dish", "items": nutrients})
-        show_analysis_results(safe_nutrients, meal_type, meal_date, lat, lon, location_name)
+                    safe_nutrients = process_gemini_food_items({"type": "dish", "items": nutrients})
+                show_analysis_results(safe_nutrients, meal_type, meal_date, lat, lon, location_name)
         else:
             st.error("❌ Não foi possível analisar a refeição. Tente novamente ou descreva manualmente.")
 
