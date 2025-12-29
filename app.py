@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date, datetime, timedelta
 from auth import generate_token, decode_token, create_password_hash, verify_password_hash
 from api_perplexity import analyze_meal_by_description, analyze_meal_by_barcode, analyze_meal_photo
+from nutrition_fixes import safe_session_key, process_gemini_food_items
 from models import MealData
 from storage import (
     save_meal, get_daily_macros, get_aggregated_macros, create_user,
@@ -471,7 +472,8 @@ def show_analysis_page():
             return
         
         if nutrients:
-            show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_name)
+            safe_nutrients = process_gemini_food_items({"type": "dish", "items": nutrients})
+        show_analysis_results(safe_nutrients, meal_type, meal_date, lat, lon, location_name)
         else:
             st.error("❌ Não foi possível analisar a refeição. Tente novamente ou descreva manualmente.")
 
@@ -540,12 +542,16 @@ def show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_na
     st.success(f"💾 Refeição salva com sucesso! (ID: {meal_id})")
 
     # Limpar formulários das abas após sucesso
-    for key in [
-        "camera", "upload", "desc_input", "barcode_input", "barcode_quantity",
-        "meal_type", "meal_date", "lat_input", "lon_input", "loc_name"
-    ]:
-        if key in st.session_state:
-            st.session_state[key] = None
+    # Limpar session state para cada nutriente processado (com validacao)
+        for nutrient in nutrients:
+            if isinstance(nutrient, dict) and "name" in nutrient:
+                safe_key = safe_session_key(nutrient.get("name", "unknown"), nutrient.get("id", "default"))
+                if safe_key not in st.session_state:
+                    st.session_state[safe_key] = nutrient
+                if st.button(f"❌ Remover {nutrient.get('name', 'Item')}", key=f"remove_{safe_key}"):
+                    if safe_key in st.session_state:
+                        del st.session_state[safe_key]
+                    st.rerun()
     # Resetar valores padrão para alguns campos
     st.session_state["barcode_quantity"] = 100
     st.session_state["meal_type"] = "lunch"
