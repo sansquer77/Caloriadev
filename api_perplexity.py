@@ -25,10 +25,6 @@ except ImportError:
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions'
 
-# API Ninjas (substitui CalorieNinjas que foi descontinuado)
-# Suporta múltiplas variáveis de ambiente para flexibilidade
-NUTRITION_API_KEY = os.getenv('APININJAS_KEY') or os.getenv('CALORIENINJAS_API_KEY') or os.getenv('API_NINJAS_KEY')
-NUTRITION_API_URL = 'https://api.api-ninjas.com/v1/nutrition'
 
 def encode_image_to_base64(image_bytes: bytes) -> str:
     return base64.b64encode(image_bytes).decode('utf-8')
@@ -36,7 +32,7 @@ def encode_image_to_base64(image_bytes: bytes) -> str:
 def translate_food_to_english(food_description: str) -> Optional[str]:
     """
     Traduz descrição de alimentos do português para inglês usando Perplexity.
-    Mantém quantidades e formata para a API CalorieNinjas.
+    Mantém quantidades no formato correto.
     """
     if not PERPLEXITY_API_KEY:
         print("Aviso: PERPLEXITY_API_KEY não configurada, usando descrição original")
@@ -96,7 +92,7 @@ Responda APENAS com a tradução em inglês, sem explicações adicionais."""
                     if translation.lower().startswith(prefix.lower()):
                         translation = translation[len(prefix):].strip()
                 
-                # Limita o tamanho (CalorieNinjas tem limite)
+                # Limita o tamanho
                 if len(translation) > 1500:
                     translation = translation[:1500]
                 
@@ -112,7 +108,7 @@ Responda APENAS com a tradução em inglês, sem explicações adicionais."""
 
 def identify_items_perplexity(image_bytes: bytes) -> Optional[str]:
     """Identifica itens alimentares na imagem usando a API de chat da Perplexity com visão.
-    Retorna a descrição já em inglês para compatibilidade com CalorieNinjas."""
+    Retorna a descrição dos alimentos identificados."""
     headers = {
         'Authorization': f'Bearer {PERPLEXITY_API_KEY}',
         'Content-Type': 'application/json'

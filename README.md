@@ -6,6 +6,7 @@ Aplicativo de análise nutricional inteligente que permite fotografar refeiçõe
 
 - 📸 **Análise por Foto**: Tire uma foto do seu prato e a IA identifica os alimentos
 - ✍️ **Análise por Texto**: Descreva sua refeição manualmente
+- 📊 **Análise por Código de Barras**: Escaneie produtos industrializados
 - 📊 **Informações Nutricionais Completas**:
   - Calorias
   - Proteínas
@@ -24,9 +25,10 @@ Aplicativo de análise nutricional inteligente que permite fotografar refeiçõe
 - **Frontend**: Streamlit
 - **Backend**: Python 3.11
 - **Banco de Dados**: PostgreSQL (produção) / SQLite (desenvolvimento)
-- **APIs de IA**:
-  - Perplexity AI (identificação de alimentos por imagem)
-  - CalorieNinjas (informações nutricionais)
+- **Fontes Nutricionais**:
+  - TACO (Tabela Brasileira de Composição de Alimentos) - dados locais
+  - Open Food Facts (API gratuita com milhões de produtos)
+  - Perplexity AI (identificação de alimentos por imagem + fallback)
 
 ## 🚀 Deploy na Digital Ocean
 
@@ -34,7 +36,6 @@ Aplicativo de análise nutricional inteligente que permite fotografar refeiçõe
 
 1. Conta na [Digital Ocean](https://www.digitalocean.com/)
 2. Chave de API da [Perplexity](https://www.perplexity.ai/)
-3. Chave de API da [CalorieNinjas](https://calorieninjas.com/api)
 
 ### Passo a Passo
 
@@ -52,7 +53,6 @@ Aplicativo de análise nutricional inteligente que permite fotografar refeiçõe
    | Variável | Descrição |
    |----------|-----------|
    | `PERPLEXITY_API_KEY` | Sua chave da API Perplexity |
-   | `CALORIENINJAS_API_KEY` | Sua chave da API CalorieNinjas |
    | `SECRET_KEY` | Chave secreta para JWT (gere uma aleatória) |
    | `DATABASE_URL` | URL do banco PostgreSQL (fornecida pela DO) |
 
@@ -136,10 +136,16 @@ Caloriadev/
 3. Vá para API Settings
 4. Gere uma nova API Key
 
-### CalorieNinjas
-1. Acesse [calorieninjas.com](https://calorieninjas.com/)
-2. Crie uma conta gratuita
-3. Copie sua API Key do dashboard
+## 🍽️ Fontes de Dados Nutricionais
+
+O app usa 3 fontes em cascata para obter dados nutricionais precisos:
+
+1. **TACO** (local) - Tabela Brasileira de Composição de Alimentos com 57 alimentos comuns
+2. **Open Food Facts** (API gratuita) - Base de dados colaborativa com milhões de produtos industrializados
+3. **Perplexity AI** (fallback) - IA para itens não encontrados nas fontes anteriores
+
+### Código de Barras
+O app suporta busca por código de barras de produtos industrializados usando a API Open Food Facts.
 
 ## 📱 Uso do App
 

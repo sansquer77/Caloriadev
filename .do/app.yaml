@@ -20,9 +20,6 @@ services:
       - key: PERPLEXITY_API_KEY
         scope: RUN_TIME
         type: SECRET
-      - key: CALORIENINJAS_API_KEY
-        scope: RUN_TIME
-        type: SECRET
       - key: SECRET_KEY
         scope: RUN_TIME
         type: SECRET
