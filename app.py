@@ -352,7 +352,7 @@ def get_location_component():
             location_name = st.text_input("Digite o nome do local", key="loc_name", placeholder="Ex: Restaurante XYZ")
     else:
         location_name = st.text_input("Nome do local (opcional)", placeholder="Ex: Restaurante XYZ", key="loc_name")
-
+    
     return lat, lon, location_name
 
 def show_analysis_page():
@@ -435,7 +435,7 @@ def show_analysis_page():
     
     # Localização
     st.divider()
-    lat, lon, location_name = get_location_component()
+    _, _, location_name = get_location_component()
     
     st.divider()
     
@@ -472,8 +472,7 @@ def show_analysis_page():
             return
         
         if nutrients:
-                    safe_nutrients = process_gemini_food_items({"type": "dish", "items": nutrients})
-                show_analysis_results(safe_nutrients, meal_type, meal_date, lat, lon, location_name)
+            show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_name)
         else:
             st.error("❌ Não foi possível analisar a refeição. Tente novamente ou descreva manualmente.")
 
@@ -533,8 +532,7 @@ def show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_na
         potassium=nutrients.get('potassium', 0),
         cholesterol=nutrients.get('cholesterol', 0),
         description=nutrients.get('description', ''),
-        latitude=lat if lat != 0 else None,
-        longitude=lon if lon != 0 else None,
+        location_name=location_name if location_name else None
         location_name=location_name if location_name else None
     )
     
