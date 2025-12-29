@@ -1,8 +1,9 @@
 # 📦 Caloria Dev - Dependências
-# Versão 2.6 - Parser Inteligente + Análise Nutricional
+# Versão 2.6 - Parser Inteligente + Análise Nutricional + GEMINI
 
 # Web Framework
 streamlit>=1.28.0
+Pillow>=10.0.0  # Para processamento de imagens
 
 # Database
 SQLAlchemy>=2.0.0
@@ -11,6 +12,9 @@ sqlalchemy-utils>=0.41.0
 # API
 requests>=2.31.0
 aiohttp>=3.9.0
+
+# AI/ML
+google-generativeai>=0.3.0  # Google Gemini para análise de fotos
 
 # Data Processing
 pandas>=2.1.0
