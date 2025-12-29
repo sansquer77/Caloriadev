@@ -513,31 +513,6 @@ def generate_pdf_report(
             ]))
             content.append(goals_table)
     
-    # Análise de IA
-    if include_ai_analysis:
-        content.append(PageBreak())
-        content.append(Paragraph("🤖 Análise Nutricional por IA", styles['SectionTitle']))
-        
-        # Preparar dados para análise
-        analysis_data = {
-            'calories': macros['calories'],
-            'protein': macros['protein'],
-            'carbs': macros['carbs'],
-            'fat_total': macros['fat_total'],
-            'sugar': macros['sugar'],
-            'fiber': macros['fiber'],
-            'days': days_with_data,
-            'meal_count': total_meals
-        }
-        
-        analysis_text = generate_ai_analysis(analysis_data, user_info, period)
-        
-        # Formatar análise em parágrafos
-        for paragraph in analysis_text.split('\n\n'):
-            if paragraph.strip():
-                content.append(Paragraph(paragraph.strip(), styles['BodyText2']))
-                content.append(Spacer(1, 5))
-    
     # Rodapé
     content.append(Spacer(1, 30))
     content.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))

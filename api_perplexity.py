@@ -168,14 +168,16 @@ def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
         'Content-Type': 'application/json'
     }
     
-    prompt = f"""Busque dados nutricionais da TBCA/TACO (Brasil) ou USDA para esta refeição:
+    prompt = f"""Busque dados nutricionais da TBCA/TACO (Brasil) ou USDA para CADA ITEM desta refeição:
 
 {meal_text}
 
-Retorne APENAS JSON neste formato:
-{{"items":["alimento1","alimento2"],"calories":0,"protein":0,"fat_total":0,"fat_saturated":0,"carbs":0,"sugar":0,"fiber":0,"sodium":0}}
+IMPORTANTE: Identifique TODOS os itens separados por vírgula, "e" ou ponto. Calcule a soma total dos valores nutricionais de todos os itens.
 
-Use valores reais das tabelas nutricionais. Não invente dados."""
+Retorne APENAS JSON neste formato:
+{{"items":["item1 com quantidade","item2 com quantidade"],"calories":0,"protein":0,"fat_total":0,"fat_saturated":0,"carbs":0,"sugar":0,"fiber":0,"sodium":0}}
+
+Os valores devem ser a SOMA de todos os itens. Use valores reais das tabelas nutricionais."""
 
     data = {
         "model": "sonar",
