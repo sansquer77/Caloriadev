@@ -533,7 +533,6 @@ def show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_na
         cholesterol=nutrients.get('cholesterol', 0),
         description=nutrients.get('description', ''),
         location_name=location_name if location_name else None
-        location_name=location_name if location_name else None
     )
     
     meal_id = save_meal(meal)
