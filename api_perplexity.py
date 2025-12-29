@@ -777,8 +777,12 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
                 perplexity_result['source'] = 'Perplexity (via Gemini)'
                 return perplexity_result
             
-            # Se nada funcionou, retornar erro
-            return {'error': f'Não foi possível ler os valores nutricionais do rótulo de "{product_name}". Tente descrever o produto manualmente.'}
+            # Se nada funcionou, retornar erro pedindo descrição melhor
+            return {
+                'error': f'Não encontrei dados nutricionais oficiais para "{product_name}". '
+                         'A foto do rótulo não estava legível ou o produto não está cadastrado. '
+                         'Use a aba "Descrever Refeição" e digite o nome completo do produto com a marca.'
+            }
         
         result = {
             'calories': float(nutrients.get('calories', 0)),
@@ -892,10 +896,21 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
         print(f"📊 Total sources: {sources}")
         print(f"📊 Total found_items: {found_items}")
         print(f"📊 Total nutrients: {total_nutrients}")
+        print(f"📊 Items não encontrados: {not_found}")
+        
+        # Se ainda há itens não encontrados após todas as buscas
+        if not_found:
+            not_found_names = [item[0] if isinstance(item, tuple) else item for item in not_found]
+            print(f"⚠️ Itens sem dados nutricionais: {not_found_names}")
         
         if not found_items and not total_nutrients.get('calories', 0):
             print("❌ Nenhum item encontrado com calorias!")
-            return {'error': 'Não foi possível encontrar informações nutricionais para os alimentos identificados.'}
+            items_list = ', '.join([item[0] if isinstance(item, tuple) else str(item) for item in food_items])
+            return {
+                'error': f'Não encontrei dados nutricionais oficiais para: {items_list}. '
+                         'Tente descrever o produto com mais detalhes (ex: marca, tipo, peso) '
+                         'ou use a aba "Descrever Refeição".'
+            }
         
         source_str = ' + '.join(sources) if sources else 'Gemini Vision'
         
