@@ -3,7 +3,7 @@
 FUNCIONALIDADES PRINCIPAIS:
 - 🔐 Controle de acesso (Login/Cadastro)
 - 👤 Gestão de perfis de usuário com dados nutricionais
-- 📸 Análise de foto de refeição (IA)
+- 📸 Análise de foto de refeição (IA GEMINI)
 - 🔍 Consulta código de barras (Open Food Facts)
 - 🍴 Parser inteligente: quebra refeições em itens separados
 - 💺 Itens individuais salvos no banco (rastreamento granular)
@@ -220,9 +220,12 @@ if not st.session_state.authenticated:
                 key="genero_register"
             )
         with col2:
+            # ✅ CORRIGIDO: Data de nascimento SEM LIMITE SUPERIOR
             data_nascimento = st.date_input(
                 "Data de Nascimento",
-                value=date(2000, 1, 1),
+                value=date(1977, 1, 1),  # Padrão para ~48 anos
+                min_value=date(1920, 1, 1),  # Nascido em 1920 ou depois (limite realista)
+                max_value=date.today(),  # Não permite data futura
                 key="data_nascimento_register"
             )
         
@@ -293,7 +296,7 @@ if not st.session_state.authenticated:
         # Verificar se soma 100%
         total_pct = proteina_pct + carboidrato_pct + gordura_pct
         if total_pct != 100:
-            st.warning(f"⚠️ A soma dos percentuais deve ser 100% (atual: {total_pct}%)")
+            st.warning(f"⚠️ A soma dos percentuais deve ser 100% (atual: {total_pct}%")
         
         # Preferências
         st.markdown("#### 🌟 Preferências")
@@ -308,7 +311,7 @@ if not st.session_state.authenticated:
         with col2:
             objetivo_nutricional = st.selectbox(
                 "Objetivo Nutricional",
-                ["Perder Peso", "Manter Peso", "Ganhar Mássa", "Melhorar Saúde"],
+                ["Perder Peso", "Manter Peso", "Ganhar Massa", "Melhorar Saúde"],
                 key="objetivo_register"
             )
         
@@ -323,6 +326,13 @@ if not st.session_state.authenticated:
                 errors.append("⚠️ A senha deve ter pelo menos 6 caracteres")
             if total_pct != 100:
                 errors.append(f"⚠️ A soma dos percentuais deve ser 100% (atual: {total_pct}%)")
+            
+            # Validar idade
+            idade_user = calcular_idade(data_nascimento)
+            if idade_user < 13:
+                errors.append(f"⚠️ Você deve ter pelo menos 13 anos (sua idade: {idade_user} anos)")
+            if idade_user > 120:
+                errors.append(f"⚠️ Data de nascimento inválida (seria {idade_user} anos)")
             
             if errors:
                 for error in errors:
@@ -444,8 +454,6 @@ else:
     
     
     # ===================== PÁGINAS DO APP =====================
-    # (Resto do código de páginas: Registrar Refeição, Análise de Foto, etc.)
-    # [Código idêntico ao anterior - mantendo todas as funções de refeição, histórico, relatórios]
     
     if page == "Registrar Refeição":
         st.markdown("<div class='subheader'>💫 Registrar Nova Refeição</div>", unsafe_allow_html=True)
@@ -564,7 +572,67 @@ else:
     
     elif page == "Análise de Foto":
         st.markdown("<div class='subheader'>📸 Análise de Foto da Refeição</div>", unsafe_allow_html=True)
-        st.info("🚀 Funcionalidade de análise de foto em desenvolvimento - em breve!")
+        st.info("✅ Análise de foto com IA GEMINI - Enviando foto de uma refeição...")
+        
+        uploaded_file = st.file_uploader("Faça upload de uma foto da refeição", type=["jpg", "jpeg", "png"])
+        
+        if uploaded_file is not None:
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.image(uploaded_file, caption="Foto da Refeição", width=200)
+            
+            with col2:
+                if st.button("🤖 Analisar com GEMINI", use_container_width=True, type="primary"):
+                    with st.spinner("🔍 GEMINI analisando imagem..."):
+                        try:
+                            from api_gemini import analyze_meal_from_image
+                            from PIL import Image
+                            
+                            # Obter meta de calorias do usuário
+                            db = SessionLocal()
+                            user = db.query(User).filter(User.id == st.session_state.user_id).first()
+                            user_calorias = user.calorias_diarias if user else 2000
+                            db.close()
+                            
+                            # Analisar imagem
+                            image = Image.open(uploaded_file)
+                            analysis_result = analyze_meal_from_image(image, user_calorias)
+                            
+                            if analysis_result['success']:
+                                st.markdown("### 💪 Itens Identificados (GEMINI)")
+                                
+                                for idx, item in enumerate(analysis_result['items'], 1):
+                                    col_a, col_b = st.columns([2, 2])
+                                    with col_a:
+                                        st.write(f"**{idx}. {item['item']}**")
+                                        st.caption(f"Quantidade: {item['quantity']}")
+                                    with col_b:
+                                        st.metric("Calorias", f"{item.get('calories', 0):.0f} kcal")
+                                        st.metric("Proteínas", f"{item.get('protein', 0):.1f}g")
+                                
+                                if analysis_result.get('observation'):
+                                    st.info(f"📝 Observação: {analysis_result['observation']}")
+                                
+                                st.markdown("### 📊 RESUMO TOTAL")
+                                totals = analysis_result['totals']
+                                col_1, col_2, col_3, col_4 = st.columns(4)
+                                with col_1:
+                                    st.metric("🔥 Calorias", f"{totals.get('calories', 0):.0f} kcal")
+                                with col_2:
+                                    st.metric("🥩 Proteínas", f"{totals.get('protein', 0):.1f}g")
+                                with col_3:
+                                    st.metric("🍞 Carboidratos", f"{totals.get('carbs', 0):.1f}g")
+                                with col_4:
+                                    st.metric("🌾 Fibras", f"{totals.get('fiber', 0):.1f}g")
+                            else:
+                                st.error(f"❌ Erro na análise GEMINI: {analysis_result.get('error')}")
+                        
+                        except ImportError:
+                            st.error("⚠️ Módulo GEMINI não importado. Verifique se api_gemini.py existe.")
+                        except Exception as e:
+                            logger.error(f"Erro ao analisar foto: {e}")
+                            st.error(f"⚠️ Erro: {e}")
     
     elif page == "Consultar Código de Barras":
         st.markdown("<div class='subheader'>🔍 Consultar Código de Barras</div>", unsafe_allow_html=True)
@@ -592,11 +660,119 @@ else:
     
     elif page == "Histórico":
         st.markdown("<div class='subheader'>📑 Histórico de Refeições</div>", unsafe_allow_html=True)
-        st.info("🚀 Seção em desenvolvimento")
+        
+        db = SessionLocal()
+        try:
+            meals = db.query(Meal).filter(Meal.user_id == st.session_state.user_id).order_by(Meal.date.desc()).all()
+            
+            if meals:
+                # Agrupar por data
+                meals_by_date = {}
+                for meal in meals:
+                    date_str = meal.date
+                    if date_str not in meals_by_date:
+                        meals_by_date[date_str] = []
+                    meals_by_date[date_str].append(meal)
+                
+                # Exibir por data
+                for date_str in sorted(meals_by_date.keys(), reverse=True):
+                    with st.expander(f"📅 {date_str}"):
+                        day_meals = meals_by_date[date_str]
+                        day_totals = {
+                            'calories': sum(m.calories for m in day_meals),
+                            'protein': sum(m.protein for m in day_meals),
+                            'carbs': sum(m.carbs for m in day_meals),
+                            'fiber': sum(m.fiber for m in day_meals)
+                        }
+                        
+                        # Resumo do dia
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("🔥 Calorias (dia)", f"{day_totals['calories']:.0f} kcal")
+                        with col2:
+                            st.metric("🥩 Proteínas", f"{day_totals['protein']:.1f}g")
+                        with col3:
+                            st.metric("🍞 Carboidratos", f"{day_totals['carbs']:.1f}g")
+                        with col4:
+                            st.metric("🌾 Fibras", f"{day_totals['fiber']:.1f}g")
+                        
+                        st.divider()
+                        
+                        # Refeições do dia
+                        for meal in day_meals:
+                            st.markdown(f"**{meal.meal_type.upper()}** - {meal.description[:50]}...")
+                            st.caption(f"📍 {meal.location_name or 'Local não informado'}")
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Cal", f"{meal.calories:.0f}")
+                            with col2:
+                                st.metric("Prot", f"{meal.protein:.1f}g")
+                            with col3:
+                                st.metric("Carbs", f"{meal.carbs:.1f}g")
+                            with col4:
+                                st.metric("Fiber", f"{meal.fiber:.1f}g")
+                            
+                            st.divider()
+            else:
+                st.info("📭 Nenhuma refeição registrada ainda. Comece adicionando uma!")
+        
+        except Exception as e:
+            logger.error(f"Erro ao carregar histórico: {e}")
+            st.error(f"Erro ao carregar histórico: {e}")
+        finally:
+            db.close()
     
     elif page == "Relatórios":
         st.markdown("<div class='subheader'>📋 Relatórios Nutricionais</div>", unsafe_allow_html=True)
-        st.info("🚀 Seção em desenvolvimento")
+        
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == st.session_state.user_id).first()
+            meals = db.query(Meal).filter(Meal.user_id == st.session_state.user_id).all()
+            
+            if meals:
+                # Totais gerais
+                total_meals = len(meals)
+                total_calories = sum(m.calories for m in meals)
+                avg_calories = total_calories / total_meals if total_meals > 0 else 0
+                total_protein = sum(m.protein for m in meals)
+                avg_protein = total_protein / total_meals if total_meals > 0 else 0
+                
+                st.markdown("### 📊 Resumo Geral")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total de Refeições", total_meals)
+                with col2:
+                    st.metric("Média de Calorias", f"{avg_calories:.0f} kcal")
+                with col3:
+                    st.metric("Total de Proteína", f"{total_protein:.1f}g")
+                with col4:
+                    st.metric("Média de Proteína/refeição", f"{avg_protein:.1f}g")
+                
+                st.divider()
+                
+                # Comparação com meta
+                if user:
+                    st.markdown(f"### 🎯 Comparação com Suas Metas")
+                    st.markdown(f"**Meta diária:** {user.calorias_diarias} kcal")
+                    st.markdown(f"**Média consumida:** {avg_calories:.0f} kcal")
+                    st.markdown(f"**Diferença:** {avg_calories - user.calorias_diarias:+.0f} kcal")
+                    
+                    pct_meta = (avg_calories / user.calorias_diarias) * 100
+                    st.progress(min(pct_meta / 100, 1.0), text=f"{pct_meta:.0f}% da meta")
+                    
+                    st.divider()
+                    st.markdown("### 💡 Insights com Perplexity (em desenvolvimento)")
+                    st.info("🚀 Análise inteligente de hábitos alimentares em breve!")
+            else:
+                st.info("📭 Nenhuma refeição registrada ainda. Comece adicionando uma!")
+        
+        except Exception as e:
+            logger.error(f"Erro ao gerar relatório: {e}")
+            st.error(f"Erro ao gerar relatório: {e}")
+        finally:
+            db.close()
     
     elif page == "Configurações":
         st.markdown("<div class='subheader'>⚙️ Configurações do App</div>", unsafe_allow_html=True)
