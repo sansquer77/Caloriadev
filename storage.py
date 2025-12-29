@@ -158,7 +158,8 @@ def get_user_meals(user_id: int, limit: int = 50) -> List[Dict]:
 
 def create_user(username: str, password_hash: str, weight: float = None, height: float = None,
                 cal_limit: float = None, protein_limit: float = None, fat_limit: float = None,
-                carbs_limit: float = None, sugar_limit: float = None) -> int:
+                carbs_limit: float = None, sugar_limit: float = None, birth_date = None,
+                protein_pct: float = None, fat_pct: float = None, carbs_pct: float = None) -> int:
     """Cadastra um novo usuário no banco e retorna o ID."""
     session = get_session()
     try:
@@ -167,11 +168,15 @@ def create_user(username: str, password_hash: str, weight: float = None, height:
             password_hash=password_hash,
             weight=weight,
             height=height,
+            birth_date=birth_date,
             cal_limit=cal_limit,
             protein_limit=protein_limit,
             fat_limit=fat_limit,
             carbs_limit=carbs_limit,
-            sugar_limit=sugar_limit
+            sugar_limit=sugar_limit,
+            protein_pct=protein_pct or 30.0,
+            fat_pct=fat_pct or 25.0,
+            carbs_pct=carbs_pct or 45.0
         )
         session.add(user)
         session.commit()

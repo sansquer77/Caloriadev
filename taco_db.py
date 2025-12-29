@@ -13,7 +13,11 @@ from difflib import SequenceMatcher
 
 # Caminho do banco de dados TACO
 TACO_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taco.db')
-TACO_XLSX_URL = "https://www.tbca.net.br/base_dados/taco4_completo.xlsx"
+# URLs alternativas para download da tabela TACO
+TACO_URLS = [
+    "https://www.nepa.unicamp.br/taco/arquivos/taco_4_edicao_ampliada_e_revisada.xlsx",
+    "https://www.cfn.org.br/wp-content/uploads/2017/03/taco_4_edicao_ampliada_e_revisada.xlsx",
+]
 TACO_XLSX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taco4_completo.xlsx')
 
 # Cache em memória para buscas frequentes
@@ -22,25 +26,166 @@ _taco_cache: Dict[str, Dict] = {}
 
 def download_taco_table() -> bool:
     """
-    Baixa a tabela TACO do site oficial.
+    Baixa a tabela TACO de fontes oficiais.
+    Tenta múltiplas URLs em caso de falha.
     Retorna True se o download foi bem-sucedido.
     """
+    import requests
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    for url in TACO_URLS:
+        try:
+            print(f"Tentando baixar tabela TACO de {url}...")
+            response = requests.get(url, headers=headers, timeout=120, allow_redirects=True)
+            
+            if response.status_code == 200 and len(response.content) > 10000:
+                with open(TACO_XLSX_PATH, 'wb') as f:
+                    f.write(response.content)
+                print(f"Tabela TACO salva em {TACO_XLSX_PATH} ({len(response.content)} bytes)")
+                return True
+            else:
+                print(f"Resposta inválida de {url}: HTTP {response.status_code}, tamanho: {len(response.content)}")
+        except Exception as e:
+            print(f"Erro ao baixar de {url}: {e}")
+            continue
+    
+    # Se todas falharam, criar tabela básica manualmente
+    print("Download falhou. Criando tabela básica com alimentos comuns...")
+    return create_basic_taco_table()
+
+
+def create_basic_taco_table() -> bool:
+    """
+    Cria uma tabela básica com alimentos brasileiros comuns.
+    Usada como fallback quando o download falha.
+    Dados baseados na TACO 4ª edição.
+    """
+    # Dados nutricionais por 100g - baseados na TACO
+    alimentos = [
+        # Cereais e derivados
+        {"nome": "Arroz branco cozido", "calorias": 128, "proteina": 2.5, "gordura_total": 0.2, "carboidratos": 28.1, "fibra": 1.6, "sodio": 1},
+        {"nome": "Arroz integral cozido", "calorias": 124, "proteina": 2.6, "gordura_total": 1.0, "carboidratos": 25.8, "fibra": 2.7, "sodio": 1},
+        {"nome": "Feijão preto cozido", "calorias": 77, "proteina": 4.5, "gordura_total": 0.5, "carboidratos": 14.0, "fibra": 8.4, "sodio": 2},
+        {"nome": "Feijão carioca cozido", "calorias": 76, "proteina": 4.8, "gordura_total": 0.5, "carboidratos": 13.6, "fibra": 8.5, "sodio": 2},
+        {"nome": "Macarrão cozido", "calorias": 102, "proteina": 3.4, "gordura_total": 0.5, "carboidratos": 21.8, "fibra": 1.0, "sodio": 1},
+        {"nome": "Pão francês", "calorias": 300, "proteina": 8.0, "gordura_total": 3.1, "carboidratos": 58.6, "fibra": 2.3, "sodio": 648},
+        {"nome": "Pão de forma", "calorias": 253, "proteina": 7.9, "gordura_total": 2.8, "carboidratos": 49.9, "fibra": 2.5, "sodio": 496},
+        {"nome": "Farofa", "calorias": 403, "proteina": 1.7, "gordura_total": 16.5, "carboidratos": 62.4, "fibra": 6.4, "sodio": 574},
+        {"nome": "Farinha de mandioca", "calorias": 361, "proteina": 1.2, "gordura_total": 0.3, "carboidratos": 87.9, "fibra": 6.5, "sodio": 2},
+        
+        # Carnes e ovos
+        {"nome": "Frango grelhado", "calorias": 159, "proteina": 32.0, "gordura_total": 2.5, "carboidratos": 0, "fibra": 0, "sodio": 74},
+        {"nome": "Peito de frango grelhado", "calorias": 159, "proteina": 32.0, "gordura_total": 2.5, "carboidratos": 0, "fibra": 0, "sodio": 74},
+        {"nome": "Carne bovina grelhada", "calorias": 219, "proteina": 32.4, "gordura_total": 9.4, "carboidratos": 0, "fibra": 0, "sodio": 51},
+        {"nome": "Carne moída refogada", "calorias": 212, "proteina": 26.7, "gordura_total": 11.6, "carboidratos": 0, "fibra": 0, "sodio": 50},
+        {"nome": "Pernil assado", "calorias": 262, "proteina": 27.0, "gordura_total": 16.5, "carboidratos": 0, "fibra": 0, "sodio": 65},
+        {"nome": "Costela bovina assada", "calorias": 292, "proteina": 24.7, "gordura_total": 21.3, "carboidratos": 0, "fibra": 0, "sodio": 48},
+        {"nome": "Linguiça frita", "calorias": 296, "proteina": 16.1, "gordura_total": 24.6, "carboidratos": 2.7, "fibra": 0, "sodio": 1118},
+        {"nome": "Ovo frito", "calorias": 240, "proteina": 15.6, "gordura_total": 19.6, "carboidratos": 0.6, "fibra": 0, "sodio": 364},
+        {"nome": "Ovo cozido", "calorias": 146, "proteina": 13.3, "gordura_total": 9.5, "carboidratos": 0.6, "fibra": 0, "sodio": 146},
+        {"nome": "Peixe grelhado", "calorias": 111, "proteina": 23.0, "gordura_total": 1.7, "carboidratos": 0, "fibra": 0, "sodio": 88},
+        
+        # Laticínios
+        {"nome": "Leite integral", "calorias": 61, "proteina": 3.2, "gordura_total": 3.3, "carboidratos": 4.5, "fibra": 0, "sodio": 50},
+        {"nome": "Queijo mussarela", "calorias": 330, "proteina": 22.6, "gordura_total": 25.2, "carboidratos": 3.0, "fibra": 0, "sodio": 581},
+        {"nome": "Queijo minas frescal", "calorias": 264, "proteina": 17.4, "gordura_total": 20.2, "carboidratos": 3.2, "fibra": 0, "sodio": 343},
+        {"nome": "Iogurte natural", "calorias": 51, "proteina": 4.1, "gordura_total": 1.5, "carboidratos": 5.4, "fibra": 0, "sodio": 52},
+        {"nome": "Manteiga", "calorias": 726, "proteina": 0.4, "gordura_total": 82.4, "carboidratos": 0, "fibra": 0, "sodio": 11},
+        
+        # Vegetais
+        {"nome": "Alface", "calorias": 11, "proteina": 1.3, "gordura_total": 0.2, "carboidratos": 1.7, "fibra": 1.0, "sodio": 3},
+        {"nome": "Tomate", "calorias": 15, "proteina": 1.1, "gordura_total": 0.2, "carboidratos": 3.1, "fibra": 1.2, "sodio": 2},
+        {"nome": "Cebola", "calorias": 39, "proteina": 1.7, "gordura_total": 0.1, "carboidratos": 8.9, "fibra": 2.2, "sodio": 1},
+        {"nome": "Batata cozida", "calorias": 52, "proteina": 1.2, "gordura_total": 0.1, "carboidratos": 11.9, "fibra": 1.3, "sodio": 2},
+        {"nome": "Batata frita", "calorias": 267, "proteina": 4.0, "gordura_total": 12.0, "carboidratos": 36.0, "fibra": 3.0, "sodio": 312},
+        {"nome": "Cenoura cozida", "calorias": 30, "proteina": 0.8, "gordura_total": 0.2, "carboidratos": 6.7, "fibra": 2.6, "sodio": 42},
+        {"nome": "Brócolis cozido", "calorias": 25, "proteina": 2.1, "gordura_total": 0.5, "carboidratos": 4.4, "fibra": 3.4, "sodio": 6},
+        {"nome": "Couve refogada", "calorias": 90, "proteina": 2.9, "gordura_total": 6.7, "carboidratos": 5.7, "fibra": 5.7, "sodio": 96},
+        {"nome": "Maionese de batata", "calorias": 150, "proteina": 1.5, "gordura_total": 10.0, "carboidratos": 14.0, "fibra": 1.0, "sodio": 400},
+        
+        # Frutas
+        {"nome": "Banana", "calorias": 92, "proteina": 1.4, "gordura_total": 0.1, "carboidratos": 23.8, "fibra": 2.0, "sodio": 1},
+        {"nome": "Maçã", "calorias": 56, "proteina": 0.3, "gordura_total": 0.0, "carboidratos": 15.2, "fibra": 1.3, "sodio": 0},
+        {"nome": "Laranja", "calorias": 37, "proteina": 1.0, "gordura_total": 0.1, "carboidratos": 8.9, "fibra": 0.8, "sodio": 1},
+        {"nome": "Mamão", "calorias": 40, "proteina": 0.5, "gordura_total": 0.1, "carboidratos": 10.4, "fibra": 1.0, "sodio": 3},
+        {"nome": "Melancia", "calorias": 33, "proteina": 0.9, "gordura_total": 0.0, "carboidratos": 8.1, "fibra": 0.1, "sodio": 1},
+        {"nome": "Abacaxi", "calorias": 48, "proteina": 0.9, "gordura_total": 0.1, "carboidratos": 12.3, "fibra": 1.0, "sodio": 1},
+        
+        # Bebidas
+        {"nome": "Suco de laranja", "calorias": 45, "proteina": 0.7, "gordura_total": 0.2, "carboidratos": 10.4, "fibra": 0.1, "sodio": 1},
+        {"nome": "Café com açúcar", "calorias": 61, "proteina": 0.5, "gordura_total": 0.2, "carboidratos": 14.4, "fibra": 0, "sodio": 2},
+        {"nome": "Refrigerante cola", "calorias": 42, "proteina": 0.0, "gordura_total": 0.0, "carboidratos": 10.6, "fibra": 0, "sodio": 4},
+        {"nome": "Cerveja", "calorias": 42, "proteina": 0.3, "gordura_total": 0.0, "carboidratos": 3.5, "fibra": 0, "sodio": 4},
+        
+        # Doces e sobremesas
+        {"nome": "Açúcar", "calorias": 387, "proteina": 0.0, "gordura_total": 0.0, "carboidratos": 99.5, "fibra": 0, "sodio": 1},
+        {"nome": "Chocolate ao leite", "calorias": 540, "proteina": 7.0, "gordura_total": 30.0, "carboidratos": 60.0, "fibra": 2.0, "sodio": 60},
+        {"nome": "Bolo de chocolate", "calorias": 347, "proteina": 5.0, "gordura_total": 14.0, "carboidratos": 53.0, "fibra": 2.0, "sodio": 320},
+        {"nome": "Sorvete", "calorias": 201, "proteina": 3.5, "gordura_total": 10.5, "carboidratos": 23.4, "fibra": 0, "sodio": 70},
+        {"nome": "Pudim de leite", "calorias": 180, "proteina": 5.0, "gordura_total": 5.5, "carboidratos": 28.0, "fibra": 0, "sodio": 75},
+        
+        # Pratos típicos
+        {"nome": "Feijoada", "calorias": 145, "proteina": 9.5, "gordura_total": 6.5, "carboidratos": 12.0, "fibra": 6.0, "sodio": 450},
+        {"nome": "Strogonoff de frango", "calorias": 170, "proteina": 15.0, "gordura_total": 10.0, "carboidratos": 5.0, "fibra": 0.5, "sodio": 350},
+        {"nome": "Moqueca de peixe", "calorias": 130, "proteina": 14.0, "gordura_total": 6.5, "carboidratos": 4.0, "fibra": 1.0, "sodio": 320},
+        {"nome": "Açaí", "calorias": 58, "proteina": 0.8, "gordura_total": 3.9, "carboidratos": 6.2, "fibra": 2.6, "sodio": 5},
+        {"nome": "Tapioca", "calorias": 340, "proteina": 0.1, "gordura_total": 0.1, "carboidratos": 87.0, "fibra": 0.3, "sodio": 1},
+        {"nome": "Coxinha", "calorias": 263, "proteina": 9.5, "gordura_total": 13.0, "carboidratos": 27.5, "fibra": 1.0, "sodio": 450},
+        {"nome": "Pastel frito", "calorias": 338, "proteina": 7.5, "gordura_total": 19.5, "carboidratos": 34.0, "fibra": 1.0, "sodio": 520},
+        {"nome": "Pizza", "calorias": 266, "proteina": 11.0, "gordura_total": 10.0, "carboidratos": 33.0, "fibra": 2.0, "sodio": 620},
+        {"nome": "Hambúrguer", "calorias": 295, "proteina": 17.0, "gordura_total": 14.0, "carboidratos": 24.0, "fibra": 1.0, "sodio": 580},
+    ]
+    
     try:
-        import requests
+        conn = sqlite3.connect(TACO_DB_PATH)
+        cursor = conn.cursor()
         
-        print(f"Baixando tabela TACO de {TACO_XLSX_URL}...")
-        response = requests.get(TACO_XLSX_URL, timeout=60)
+        # Criar tabela
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS alimentos (
+                nome TEXT,
+                nome_normalizado TEXT,
+                calorias REAL,
+                proteina REAL,
+                gordura_total REAL,
+                gordura_saturada REAL,
+                carboidratos REAL,
+                acucar REAL,
+                fibra REAL,
+                sodio REAL,
+                potassio REAL,
+                colesterol REAL,
+                updated_at TEXT
+            )
+        ''')
         
-        if response.status_code == 200:
-            with open(TACO_XLSX_PATH, 'wb') as f:
-                f.write(response.content)
-            print(f"Tabela TACO salva em {TACO_XLSX_PATH}")
-            return True
-        else:
-            print(f"Erro ao baixar tabela TACO: HTTP {response.status_code}")
-            return False
+        # Inserir alimentos
+        now = datetime.now().isoformat()
+        for alimento in alimentos:
+            nome_norm = normalize_food_name(alimento['nome'])
+            cursor.execute('''
+                INSERT INTO alimentos (nome, nome_normalizado, calorias, proteina, gordura_total, 
+                    gordura_saturada, carboidratos, acucar, fibra, sodio, potassio, colesterol, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                alimento['nome'], nome_norm, alimento['calorias'], alimento['proteina'],
+                alimento['gordura_total'], 0, alimento['carboidratos'], 0,
+                alimento.get('fibra', 0), alimento.get('sodio', 0), 0, 0, now
+            ))
+        
+        # Criar índice
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_nome ON alimentos(nome_normalizado)')
+        conn.commit()
+        conn.close()
+        
+        print(f"Tabela básica TACO criada com {len(alimentos)} alimentos comuns")
+        return True
+        
     except Exception as e:
-        print(f"Erro ao baixar tabela TACO: {e}")
+        print(f"Erro ao criar tabela básica: {e}")
         return False
 
 

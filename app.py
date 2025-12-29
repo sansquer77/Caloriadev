@@ -124,23 +124,44 @@ def show_login_page():
             confirm_password = st.text_input("Confirmar Senha", type='password', key="reg_confirm")
             
             st.divider()
-            st.subheader("Dados físicos (opcional)")
+            st.subheader("Dados pessoais (opcional)")
             col1, col2 = st.columns(2)
             with col1:
-                weight = st.number_input("Peso (kg)", min_value=0.0, max_value=500.0, format="%.1f", key="reg_weight")
-                height = st.number_input("Altura (m)", min_value=0.0, max_value=3.0, format="%.2f", key="reg_height")
+                weight = st.number_input("⚖️ Peso (kg)", min_value=0.0, max_value=500.0, format="%.1f", key="reg_weight")
+                height = st.number_input("📏 Altura (m)", min_value=0.0, max_value=3.0, format="%.2f", key="reg_height")
+            with col2:
+                birth_date = st.date_input(
+                    "🎂 Data de Nascimento",
+                    value=date(1990, 1, 1),
+                    min_value=date(1920, 1, 1),
+                    max_value=date.today(),
+                    key="reg_birth"
+                )
             
             st.divider()
-            st.subheader("Limites diários (opcional)")
+            st.subheader("Metas nutricionais (opcional)")
+            
+            cal_limit = st.number_input("🔥 Meta de Calorias (kcal/dia)", min_value=500, max_value=10000, value=2000, step=50, key="reg_cal")
+            
+            st.caption("Distribuição de macronutrientes (devem somar 100%)")
             col1, col2, col3 = st.columns(3)
             with col1:
-                cal_limit = st.number_input("Calorias", min_value=0.0, value=2000.0, key="reg_cal")
-                protein_limit = st.number_input("Proteínas (g)", min_value=0.0, value=50.0, key="reg_prot")
+                protein_pct = st.slider("🥩 Proteína (%)", min_value=10, max_value=60, value=30, step=5, key="reg_prot_pct")
             with col2:
-                fat_limit = st.number_input("Gorduras (g)", min_value=0.0, value=65.0, key="reg_fat")
-                carbs_limit = st.number_input("Carboidratos (g)", min_value=0.0, value=300.0, key="reg_carbs")
+                fat_pct = st.slider("🧈 Gordura (%)", min_value=10, max_value=60, value=25, step=5, key="reg_fat_pct")
             with col3:
-                sugar_limit = st.number_input("Açúcares (g)", min_value=0.0, value=50.0, key="reg_sugar")
+                carbs_pct = st.slider("🍞 Carboidrato (%)", min_value=10, max_value=70, value=45, step=5, key="reg_carbs_pct")
+            
+            total_pct = protein_pct + fat_pct + carbs_pct
+            if total_pct != 100:
+                st.warning(f"⚠️ Total: {total_pct}% - Deve somar 100%")
+            else:
+                st.success(f"✅ Total: {total_pct}%")
+                # Calcular gramas
+                protein_grams = (cal_limit * protein_pct / 100) / 4
+                fat_grams = (cal_limit * fat_pct / 100) / 9
+                carbs_grams = (cal_limit * carbs_pct / 100) / 4
+                st.caption(f"🥩 {protein_grams:.0f}g | 🧈 {fat_grams:.0f}g | 🍞 {carbs_grams:.0f}g")
             
             submit = st.form_submit_button("Cadastrar", use_container_width=True)
             
@@ -149,14 +170,30 @@ def show_login_page():
                     st.error("Preencha usuário e senha.")
                 elif new_password != confirm_password:
                     st.error("As senhas não coincidem.")
+                elif total_pct != 100:
+                    st.error("Os percentuais devem somar 100%.")
                 elif get_user_by_username(new_username):
                     st.error("Este usuário já existe.")
                 else:
                     pwd_hash = create_password_hash(new_password)
+                    # Calcular limites em gramas
+                    protein_limit = (cal_limit * protein_pct / 100) / 4
+                    fat_limit = (cal_limit * fat_pct / 100) / 9
+                    carbs_limit = (cal_limit * carbs_pct / 100) / 4
+                    
                     user_id = create_user(
-                        new_username, pwd_hash, weight or None, height or None,
-                        cal_limit or None, protein_limit or None, fat_limit or None,
-                        carbs_limit or None, sugar_limit or None
+                        new_username, pwd_hash, 
+                        weight=weight or None, 
+                        height=height or None,
+                        cal_limit=float(cal_limit),
+                        protein_limit=protein_limit,
+                        fat_limit=fat_limit,
+                        carbs_limit=carbs_limit,
+                        sugar_limit=None,
+                        birth_date=birth_date,
+                        protein_pct=float(protein_pct),
+                        fat_pct=float(fat_pct),
+                        carbs_pct=float(carbs_pct)
                     )
                     st.success("Conta criada com sucesso! Faça login.")
 
