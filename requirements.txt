@@ -1,4 +1,4 @@
-# 📊 Caloria Dev - Dependências
+# 📦 Caloria Dev - Dependências
 # Versão 2.6 - Parser Inteligente + Análise Nutricional
 
 # Web Framework
@@ -19,9 +19,6 @@ numpy>=1.24.0
 # Environment
 python-dotenv>=1.0.0
 
-# Logging
-python-logging-loki>=0.3.2  # Opcional - para logs centralizados
-
 # Security
 PyJWT>=2.8.0
 bcrypt>=4.1.0
@@ -32,18 +29,21 @@ jsonschema>=4.20.0
 # Date/Time
 python-dateutil>=2.8.0
 
+# Logging (Opcional - comentado)
+# python-logging-loki>=0.3.2  # Para logs centralizados (opcional)
+
 # Optional - para performance
-fastapi>=0.104.0  # Se usar API REST
-uvicorn>=0.24.0   # Se usar API REST
+# fastapi>=0.104.0  # Se usar API REST
+# uvicorn>=0.24.0   # Se usar API REST
 
 # Optional - para cache
-redis>=5.0.0      # Se usar cache externo
+# redis>=5.0.0      # Se usar cache externo
 
-# Testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
+# Testing (Opcional)
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
 
-# Code Quality
-black>=23.12.0
-flake8>=6.1.0
-pylint>=3.0.0
+# Code Quality (Opcional)
+# black>=23.12.0
+# flake8>=6.1.0
+# pylint>=3.0.0
