@@ -6,7 +6,8 @@ from api_perplexity import analyze_meal_photo, analyze_meal_by_description
 from models import MealData
 from storage import (
     save_meal, get_daily_macros, get_aggregated_macros, create_user,
-    get_user_by_username, get_user_meals, get_meals_with_location, delete_meal
+    get_user_by_username, get_user_meals, get_meals_with_location, delete_meal,
+    get_user_by_id, update_user_profile, update_user_password
 )
 from db import init_db, SQLITE_PATH
 import json
@@ -158,7 +159,7 @@ def show_sidebar():
         
         page = st.radio(
             "Navegação",
-            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "📄 Relatórios", "💾 Backup/Restore"],
+            ["📸 Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "📄 Relatórios", "� Meu Perfil", "�💾 Backup/Restore"],
             label_visibility="collapsed"
         )
         
@@ -871,6 +872,230 @@ def show_reports_page():
         st.metric("🧈 Gorduras Total", f"{macros.get('fat_total', 0):.1f}g")
         st.metric("🧈 Média/dia", f"{macros.get('fat_total', 0)/days:.1f}g")
 
+
+def show_profile_page():
+    """Página de gestão do perfil do usuário."""
+    st.markdown("## 👤 Meu Perfil")
+    
+    # Carregar dados do usuário
+    user_data = get_user_by_id(st.session_state.user_id)
+    if not user_data:
+        st.error("Erro ao carregar dados do usuário.")
+        return
+    
+    tab1, tab2, tab3 = st.tabs(["📋 Dados Pessoais", "🎯 Metas Nutricionais", "🔐 Segurança"])
+    
+    # === ABA 1: DADOS PESSOAIS ===
+    with tab1:
+        st.markdown("### Informações Pessoais")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Peso
+            current_weight = user_data.get('weight') or 0.0
+            new_weight = st.number_input(
+                "⚖️ Peso (kg)",
+                min_value=0.0,
+                max_value=300.0,
+                value=float(current_weight),
+                step=0.1,
+                format="%.1f"
+            )
+            
+            # Altura
+            current_height = user_data.get('height') or 0.0
+            new_height = st.number_input(
+                "📏 Altura (m)",
+                min_value=0.0,
+                max_value=2.5,
+                value=float(current_height),
+                step=0.01,
+                format="%.2f"
+            )
+        
+        with col2:
+            # Data de nascimento
+            current_birth = user_data.get('birth_date')
+            if current_birth:
+                default_birth = current_birth
+            else:
+                default_birth = date(1990, 1, 1)
+            
+            new_birth_date = st.date_input(
+                "🎂 Data de Nascimento",
+                value=default_birth,
+                min_value=date(1920, 1, 1),
+                max_value=date.today()
+            )
+            
+            # Calcular e mostrar idade
+            if new_birth_date:
+                today = date.today()
+                age = today.year - new_birth_date.year - ((today.month, today.day) < (new_birth_date.month, new_birth_date.day))
+                st.info(f"📅 Idade: **{age} anos**")
+        
+        # Calcular e mostrar IMC
+        if new_weight > 0 and new_height > 0:
+            imc = new_weight / (new_height ** 2)
+            if imc < 18.5:
+                imc_status = "Abaixo do peso"
+                imc_color = "🔵"
+            elif imc < 25:
+                imc_status = "Peso normal"
+                imc_color = "🟢"
+            elif imc < 30:
+                imc_status = "Sobrepeso"
+                imc_color = "🟡"
+            else:
+                imc_status = "Obesidade"
+                imc_color = "🔴"
+            
+            st.metric(f"{imc_color} IMC", f"{imc:.1f}", imc_status)
+        
+        if st.button("💾 Salvar Dados Pessoais", use_container_width=True, type="primary"):
+            success = update_user_profile(
+                st.session_state.user_id,
+                weight=new_weight if new_weight > 0 else None,
+                height=new_height if new_height > 0 else None,
+                birth_date=new_birth_date
+            )
+            if success:
+                st.success("✅ Dados pessoais atualizados com sucesso!")
+            else:
+                st.error("❌ Erro ao atualizar dados.")
+    
+    # === ABA 2: METAS NUTRICIONAIS ===
+    with tab2:
+        st.markdown("### Metas Diárias")
+        
+        # Calorias
+        current_cal = user_data.get('cal_limit') or 2000.0
+        new_cal_limit = st.number_input(
+            "🔥 Meta de Calorias (kcal/dia)",
+            min_value=500,
+            max_value=10000,
+            value=int(current_cal),
+            step=50
+        )
+        
+        st.divider()
+        st.markdown("### Distribuição de Macronutrientes (%)")
+        st.caption("Os percentuais devem somar 100%")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            current_protein_pct = user_data.get('protein_pct') or 30.0
+            new_protein_pct = st.slider(
+                "🥩 Proteína (%)",
+                min_value=10,
+                max_value=60,
+                value=int(current_protein_pct),
+                step=5
+            )
+        
+        with col2:
+            current_fat_pct = user_data.get('fat_pct') or 25.0
+            new_fat_pct = st.slider(
+                "🧈 Gordura (%)",
+                min_value=10,
+                max_value=60,
+                value=int(current_fat_pct),
+                step=5
+            )
+        
+        with col3:
+            current_carbs_pct = user_data.get('carbs_pct') or 45.0
+            new_carbs_pct = st.slider(
+                "🍞 Carboidrato (%)",
+                min_value=10,
+                max_value=70,
+                value=int(current_carbs_pct),
+                step=5
+            )
+        
+        # Validar soma
+        total_pct = new_protein_pct + new_fat_pct + new_carbs_pct
+        if total_pct != 100:
+            st.warning(f"⚠️ Total: {total_pct}% - Deve somar 100%")
+        else:
+            st.success(f"✅ Total: {total_pct}%")
+        
+        # Calcular gramas baseado nas calorias e percentuais
+        st.divider()
+        st.markdown("### Metas em Gramas (calculadas automaticamente)")
+        
+        # Proteína: 4 kcal/g, Carbs: 4 kcal/g, Gordura: 9 kcal/g
+        protein_grams = (new_cal_limit * new_protein_pct / 100) / 4
+        carbs_grams = (new_cal_limit * new_carbs_pct / 100) / 4
+        fat_grams = (new_cal_limit * new_fat_pct / 100) / 9
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("🥩 Proteína", f"{protein_grams:.0f}g/dia")
+        with col2:
+            st.metric("🧈 Gordura", f"{fat_grams:.0f}g/dia")
+        with col3:
+            st.metric("🍞 Carboidrato", f"{carbs_grams:.0f}g/dia")
+        
+        if st.button("💾 Salvar Metas Nutricionais", use_container_width=True, type="primary"):
+            if total_pct != 100:
+                st.error("❌ Os percentuais devem somar 100%!")
+            else:
+                success = update_user_profile(
+                    st.session_state.user_id,
+                    cal_limit=float(new_cal_limit),
+                    protein_pct=float(new_protein_pct),
+                    fat_pct=float(new_fat_pct),
+                    carbs_pct=float(new_carbs_pct),
+                    protein_limit=protein_grams,
+                    fat_limit=fat_grams,
+                    carbs_limit=carbs_grams
+                )
+                if success:
+                    st.success("✅ Metas nutricionais atualizadas com sucesso!")
+                else:
+                    st.error("❌ Erro ao atualizar metas.")
+    
+    # === ABA 3: SEGURANÇA ===
+    with tab3:
+        st.markdown("### Alterar Senha")
+        
+        with st.form("change_password_form"):
+            current_password = st.text_input("Senha Atual", type="password")
+            new_password = st.text_input("Nova Senha", type="password")
+            confirm_password = st.text_input("Confirmar Nova Senha", type="password")
+            
+            submitted = st.form_submit_button("🔐 Alterar Senha", use_container_width=True)
+            
+            if submitted:
+                if not current_password or not new_password or not confirm_password:
+                    st.error("❌ Preencha todos os campos.")
+                elif new_password != confirm_password:
+                    st.error("❌ As senhas não coincidem.")
+                elif len(new_password) < 4:
+                    st.error("❌ A nova senha deve ter pelo menos 4 caracteres.")
+                else:
+                    # Verificar senha atual
+                    user = get_user_by_username(st.session_state.username)
+                    if user and verify_password_hash(current_password, user['password_hash']):
+                        # Atualizar senha
+                        new_hash = create_password_hash(new_password)
+                        success = update_user_password(st.session_state.user_id, new_hash)
+                        if success:
+                            st.success("✅ Senha alterada com sucesso!")
+                        else:
+                            st.error("❌ Erro ao atualizar senha.")
+                    else:
+                        st.error("❌ Senha atual incorreta.")
+        
+        st.divider()
+        st.markdown("### Informações da Conta")
+        st.info(f"👤 **Usuário:** {st.session_state.username}")
+        st.info(f"🆔 **ID:** {st.session_state.user_id}")
+
+
 # Main app
 def main():
     init_session_state()
@@ -890,7 +1115,9 @@ def main():
             show_map()
         elif page == "📄 Relatórios":
             show_reports_page()
-        elif page == "💾 Backup/Restore":
+        elif page == "� Meu Perfil":
+            show_profile_page()
+        elif page == "�💾 Backup/Restore":
             show_backup_page()
 
 if __name__ == "__main__":

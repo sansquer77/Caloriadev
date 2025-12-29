@@ -213,13 +213,45 @@ def get_user_by_id(user_id: int) -> Optional[Dict]:
                 'username': user.username,
                 'weight': user.weight,
                 'height': user.height,
+                'birth_date': user.birth_date,
                 'cal_limit': user.cal_limit,
                 'protein_limit': user.protein_limit,
                 'fat_limit': user.fat_limit,
                 'carbs_limit': user.carbs_limit,
-                'sugar_limit': user.sugar_limit
+                'sugar_limit': user.sugar_limit,
+                'protein_pct': user.protein_pct or 30.0,
+                'fat_pct': user.fat_pct or 25.0,
+                'carbs_pct': user.carbs_pct or 45.0
             }
         return None
+    finally:
+        session.close()
+
+def update_user_profile(user_id: int, **kwargs) -> bool:
+    """Atualiza o perfil do usuário."""
+    session = get_session()
+    try:
+        user = session.query(User).filter(User.id == user_id).first()
+        if user:
+            for key, value in kwargs.items():
+                if hasattr(user, key):
+                    setattr(user, key, value)
+            session.commit()
+            return True
+        return False
+    finally:
+        session.close()
+
+def update_user_password(user_id: int, new_password_hash: str) -> bool:
+    """Atualiza a senha do usuário."""
+    session = get_session()
+    try:
+        user = session.query(User).filter(User.id == user_id).first()
+        if user:
+            user.password_hash = new_password_hash
+            session.commit()
+            return True
+        return False
     finally:
         session.close()
 

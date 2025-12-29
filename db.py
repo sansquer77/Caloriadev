@@ -56,11 +56,16 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     weight = Column(Float, nullable=True)  # kg
     height = Column(Float, nullable=True)  # meters
+    birth_date = Column(Date, nullable=True)  # Data de nascimento
     cal_limit = Column(Float, nullable=True)
     protein_limit = Column(Float, nullable=True)
     fat_limit = Column(Float, nullable=True)
     carbs_limit = Column(Float, nullable=True)
     sugar_limit = Column(Float, nullable=True)
+    # Percentuais dos macronutrientes
+    protein_pct = Column(Float, nullable=True, default=30.0)  # % de proteína
+    fat_pct = Column(Float, nullable=True, default=25.0)  # % de gordura
+    carbs_pct = Column(Float, nullable=True, default=45.0)  # % de carboidrato
     created_at = Column(DateTime, default=datetime.utcnow)
 
     meals = relationship('Meal', back_populates='user')
