@@ -1,17 +1,17 @@
 """💾 Banco de Dados - Modelos SQLAlchemy
 
 Estrutura:
-- users: Autenticação
+- users: Autenticação + Perfil Nutricional
 - meals: Refeições consolidadas (por data/tipo)
 - meal_items: NOVO - Itens individuais dentro de uma refeição
 - taco_foods: Referência TACO (opcional)
 - open_food_facts_cache: Cache consolidado OFF
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey, Date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
-from datetime import datetime
+from datetime import datetime, date
 import os
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./caloria.db')
@@ -27,21 +27,46 @@ Base = declarative_base()
 
 
 class User(Base):
-    """Modelo de Usuário"""
+    """👤 Modelo de Usuário com Perfil Nutricional"""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(100), unique=True, index=True)
-    email = Column(String(100), unique=True, index=True)
-    hashed_password = Column(String(255))
-    created_at = Column(DateTime, default=datetime.utcnow)
     
-    # Relação com refeições
+    # ===== AUTENTICAÇÃO =====
+    username = Column(String(100), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    
+    # ===== PERFIL BÁSICO =====
+    nome_completo = Column(String(200), nullable=True)
+    genero = Column(String(20), nullable=True)  # masculino, feminino, outro
+    data_nascimento = Column(Date, nullable=True)  # Para cálculo de idade
+    
+    # ===== DADOS FÍSICOS =====
+    altura_cm = Column(Float, nullable=True)      # Altura em cm (ex: 170)
+    peso_kg = Column(Float, nullable=True)        # Peso em kg (ex: 75.5)
+    gordura_corporal_pct = Column(Float, nullable=True)  # Percentual de gordura
+    
+    # ===== METAS NUTRICIONAIS (Diárias) =====
+    calorias_diarias = Column(Float, nullable=True)        # Calorias alvo/dia
+    proteina_pct = Column(Float, default=30, nullable=True)         # % do total de calorias
+    carboidrato_pct = Column(Float, default=40, nullable=True)      # % do total de calorias
+    gordura_pct = Column(Float, default=30, nullable=True)          # % do total de calorias
+    
+    # ===== PREFERÉNCIAS =====
+    nivel_atividade = Column(String(50), nullable=True)  # sedentario, leve, moderado, intenso, muito_intenso
+    objetivo_nutricional = Column(String(100), nullable=True)  # perder_peso, manter, ganhar_massa, melhorar_saude
+    
+    # ===== AUDITORIA =====
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # ===== RELAÇÕES =====
     meals = relationship("Meal", back_populates="user", cascade="all, delete-orphan")
 
 
 class Meal(Base):
-    """Modelo de Refeição (consolidada)"""
+    """🍴 Modelo de Refeição (consolidada)"""
     __tablename__ = "meals"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -78,7 +103,7 @@ class Meal(Base):
 
 
 class MealItem(Base):
-    """Modelo de Item Individual dentro de uma Refeição (NOVO)"""
+    """🍲 Modelo de Item Individual dentro de uma Refeição (NOVO)"""
     __tablename__ = "meal_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -111,7 +136,7 @@ class MealItem(Base):
 
 
 class TacoFood(Base):
-    """Tabela de Referência - Alimentos TACO (Tabela de Composição de Alimentos)"""
+    """📋 Tabela de Referência - Alimentos TACO (Tabela de Composição de Alimentos)"""
     __tablename__ = "taco_foods"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -135,7 +160,7 @@ class TacoFood(Base):
 
 
 class OpenFoodFactsCache(Base):
-    """Cache de Open Food Facts consolidado em SQLite"""
+    """🔍 Cache de Open Food Facts consolidado em SQLite"""
     __tablename__ = "open_food_facts_cache"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -175,14 +200,14 @@ class OpenFoodFactsCache(Base):
 
 
 def init_db():
-    """Inicializa o banco de dados - cria todas as tabelas."""
+    """🔧 Inicializa o banco de dados - cria todas as tabelas."""
     print("\n💾 Inicializando banco de dados...")
     
     # Criar tabelas
     Base.metadata.create_all(bind=engine)
     
-    print("\u2705 Tabelas criadas:")
-    print("  - users")
+    print("✅ Tabelas criadas:")
+    print("  - users (com perfil nutricional)")
     print("  - meals")
     print("  - meal_items (NOVO)")
     print("  - taco_foods")
