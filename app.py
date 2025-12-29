@@ -7,7 +7,7 @@ from nutrition_fixes import safe_session_key, process_gemini_food_items
 from models import MealData
 from storage import (
     save_meal, get_daily_macros, get_aggregated_macros, create_user,
-    get_user_by_username, get_user_meals, get_meals_with_location, delete_meal,
+    get_user_by_username, get_user_meals, delete_meal,
     get_user_by_id, update_user_profile, update_user_password
 )
 from db import init_db, SQLITE_PATH
@@ -206,7 +206,7 @@ def show_sidebar():
         
         page = st.radio(
             "Navegação",
-            ["🍽️ Nova Análise", "📊 Resumo Diário", "📈 Histórico", "🗺️ Mapa de Refeições", "📄 Relatórios", "👤 Meu Perfil", "💾 Backup/Restore"],
+            ["🍽️ Nova Análise", "📊 Resumo Diário", "📈 Histórico", "📄 Relatórios", "👤 Meu Perfil", "💾 Backup/Restore"],
             label_visibility="collapsed"
         )
         
@@ -261,72 +261,7 @@ def get_location_component():
     """Componente para capturar localização com suporte a geolocalização automática."""
     st.markdown("#### 📍 Localização")
     
-    # JavaScript para obter localização do navegador
-    location_js = """
-    <script>
-    function getLocation() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    const lat = position.coords.latitude;
-                    const lon = position.coords.longitude;
-                    // Envia para o Streamlit via query params
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('auto_lat', lat.toFixed(6));
-                    url.searchParams.set('auto_lon', lon.toFixed(6));
-                    document.getElementById('geo_status').innerHTML = '✅ Localização obtida: ' + lat.toFixed(4) + ', ' + lon.toFixed(4);
-                    // Salva no sessionStorage para persistência
-                    sessionStorage.setItem('geo_lat', lat);
-                    sessionStorage.setItem('geo_lon', lon);
-                    // Força reload para Streamlit ler os novos parâmetros
-                    setTimeout(function() { window.location.href = url.toString(); }, 500);
-                },
-                function(error) {
-                    document.getElementById('geo_status').innerHTML = '❌ Erro: ' + error.message;
-                },
-                {enableHighAccuracy: true, timeout: 10000}
-            );
-        } else {
-            document.getElementById('geo_status').innerHTML = '❌ Geolocalização não suportada';
-        }
-    }
-    // Tenta recuperar do sessionStorage
-    window.onload = function() {
-        const savedLat = sessionStorage.getItem('geo_lat');
-        const savedLon = sessionStorage.getItem('geo_lon');
-        if (savedLat && savedLon) {
-            document.getElementById('geo_status').innerHTML = '📍 Usando localização salva: ' + parseFloat(savedLat).toFixed(4) + ', ' + parseFloat(savedLon).toFixed(4);
-        }
-    }
-    </script>
-    <button onclick="getLocation()" style="padding: 8px 16px; background-color: #2E7D32; color: white; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px;">
-        📍 Obter Localização Automática
-    </button>
-    <div id="geo_status" style="font-size: 12px; color: #666; margin-bottom: 10px;"></div>
-    """
-    
-    st.components.v1.html(location_js, height=80)
-    
-    # Lê latitude/longitude da URL se presentes (preenchidas pelo JS)
-    query_params = st.experimental_get_query_params()
-    auto_lat = query_params.get('auto_lat', [None])[0]
-    auto_lon = query_params.get('auto_lon', [None])[0]
-    if auto_lat and auto_lon:
-        try:
-            auto_lat = float(auto_lat)
-            auto_lon = float(auto_lon)
-            st.session_state['lat_input'] = auto_lat
-            st.session_state['lon_input'] = auto_lon
-        except Exception:
-            pass
-
-    # Campos manuais
-    st.caption("Ou insira manualmente:")
-    col1, col2 = st.columns(2)
-    with col1:
-        lat = st.number_input("Latitude", value=st.session_state.get('lat_input', 0.0), format="%.6f", key="lat_input")
-    with col2:
-        lon = st.number_input("Longitude", value=st.session_state.get('lon_input', 0.0), format="%.6f", key="lon_input")
+    # Mantém apenas o campo opcional de nome do local (autocomplete)
 
     # Buscar locais já cadastrados do usuário
     location_options = []
@@ -352,8 +287,8 @@ def get_location_component():
             location_name = st.text_input("Digite o nome do local", key="loc_name", placeholder="Ex: Restaurante XYZ")
     else:
         location_name = st.text_input("Nome do local (opcional)", placeholder="Ex: Restaurante XYZ", key="loc_name")
-    
-    return lat, lon, location_name
+
+    return location_name
 
 def show_analysis_page():
     """Página principal de análise de refeições."""
@@ -435,7 +370,7 @@ def show_analysis_page():
     
     # Localização
     st.divider()
-    _, _, location_name = get_location_component()
+    location_name = get_location_component()
     
     st.divider()
     
@@ -472,11 +407,11 @@ def show_analysis_page():
             return
         
         if nutrients:
-            show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_name)
+            show_analysis_results(nutrients, meal_type, meal_date, location_name)
         else:
             st.error("❌ Não foi possível analisar a refeição. Tente novamente ou descreva manualmente.")
 
-def show_analysis_results(nutrients, meal_type, meal_date, lat, lon, location_name):
+def show_analysis_results(nutrients, meal_type, meal_date, location_name):
     """Exibe resultados da análise e salva no banco."""
     st.success("✅ Análise concluída!")
     
@@ -663,46 +598,7 @@ def show_history():
         else:
             st.error("Erro ao excluir refeição.")
 
-def show_map():
-    """Exibe mapa com localizações das refeições."""
-    st.markdown("## 🗺️ Mapa de Refeições")
-    
-    meals = get_meals_with_location(st.session_state.user_id)
-    
-    if not meals:
-        st.info("Nenhuma refeição com localização registrada. Adicione latitude e longitude ao registrar suas refeições!")
-        return
-    
-    # Preparar dados para o mapa
-    map_data = pd.DataFrame([{
-        'lat': m['latitude'],
-        'lon': m['longitude'],
-        'location': m['location_name'] or 'Local não nomeado',
-        'date': m['date'].strftime('%d/%m/%Y') if hasattr(m['date'], 'strftime') else str(m['date']),
-        'calories': m['calories'],
-        'description': m['description'][:50] if m['description'] else 'Sem descrição'
-    } for m in meals if m['latitude'] and m['longitude']])
-    
-    if map_data.empty:
-        st.info("Nenhuma refeição com coordenadas válidas.")
-        return
-    
-    st.map(map_data, latitude='lat', longitude='lon', size=100, color='#2E7D32')
-    
-    # Lista de locais
-    st.divider()
-    st.markdown("### 📍 Detalhes dos Locais")
-    
-    for meal in meals:
-        if meal['latitude'] and meal['longitude']:
-            with st.expander(f"📍 {meal['location_name'] or 'Local'} - {meal['date']}"):
-                st.write(f"**Descrição:** {meal['description'] or 'N/A'}")
-                st.write(f"**Calorias:** {meal['calories']:.1f} kcal")
-                st.write(f"**Coordenadas:** {meal['latitude']:.6f}, {meal['longitude']:.6f}")
-                
-                # Link para Google Maps
-                maps_url = f"https://www.google.com/maps?q={meal['latitude']},{meal['longitude']}"
-                st.markdown(f"[🗺️ Abrir no Google Maps]({maps_url})")
+# map feature removed — no function here
 
 def show_backup_page():
     """Página de backup e restore do banco de dados."""
@@ -1261,8 +1157,7 @@ def main():
             show_daily_summary()
         elif page == "📈 Histórico":
             show_history()
-        elif page == "🗺️ Mapa de Refeições":
-            show_map()
+        # Mapa de Refeições removido
         elif page == "📄 Relatórios":
             show_reports_page()
         elif page == "👤 Meu Perfil":
