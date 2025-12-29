@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime, timedelta
 from auth import generate_token, decode_token, create_password_hash, verify_password_hash
-from api_perplexity import analyze_meal_photo, analyze_meal_by_description
+from api_perplexity import analyze_meal_photo, analyze_meal_by_description, analyze_meal_by_barcode
 from models import MealData
 from storage import (
     save_meal, get_daily_macros, get_aggregated_macros, create_user,
@@ -321,8 +321,8 @@ def show_analysis_page():
     """Página principal de análise de fotos."""
     st.markdown("## 📸 Análise de Refeição")
     
-    # Tabs para foto ou texto
-    tab1, tab2 = st.tabs(["📷 Tirar Foto", "✍️ Descrever Refeição"])
+    # Tabs para foto, texto ou código de barras
+    tab1, tab2, tab3 = st.tabs(["📷 Tirar Foto", "✍️ Descrever Refeição", "📊 Código de Barras"])
     
     with tab1:
         st.markdown("Tire uma foto do seu prato para análise automática:")
@@ -347,6 +347,29 @@ def show_analysis_page():
             height=100,
             key="desc_input"
         )
+    
+    with tab3:
+        st.markdown("### 📊 Buscar por Código de Barras")
+        st.markdown("Use o código de barras de produtos industrializados para buscar informações nutricionais.")
+        
+        barcode_input = st.text_input(
+            "Código de barras",
+            placeholder="Ex: 7894900011517 (Coca-Cola 350ml)",
+            key="barcode_input",
+            help="Digite o código de barras do produto (EAN-13, UPC, etc.)"
+        )
+        
+        barcode_quantity = st.number_input(
+            "Quantidade consumida (gramas ou ml)",
+            min_value=1,
+            max_value=5000,
+            value=100,
+            step=10,
+            key="barcode_quantity",
+            help="Informe a quantidade que você consumiu"
+        )
+        
+        st.info("💡 **Dica:** O código de barras geralmente está na embalagem do produto. A busca usa a base de dados Open Food Facts com milhões de produtos.")
     
     st.divider()
     
@@ -377,16 +400,20 @@ def show_analysis_page():
     if st.button("🔍 Analisar Refeição", use_container_width=True, type="primary"):
         nutrients = None
         
+        # Análise por código de barras (prioridade se preenchido)
+        if barcode_input and barcode_input.strip():
+            with st.spinner("📊 Buscando produto no Open Food Facts..."):
+                nutrients = analyze_meal_by_barcode(barcode_input.strip(), quantity_grams=float(barcode_quantity))
         # Análise por foto
-        if 'image_bytes' in dir() and image_bytes:
+        elif 'image_bytes' in dir() and image_bytes:
             with st.spinner("🤖 Analisando imagem com IA..."):
                 nutrients = analyze_meal_photo(image_bytes)
         # Análise por texto
         elif description_input:
-            with st.spinner("🔍 Traduzindo e buscando informações nutricionais..."):
+            with st.spinner("🔍 Buscando informações nutricionais..."):
                 nutrients = analyze_meal_by_description(description_input)
         else:
-            st.warning("Por favor, tire uma foto ou descreva sua refeição.")
+            st.warning("Por favor, tire uma foto, descreva sua refeição ou insira um código de barras.")
             return
         
         # Verifica se houve erro

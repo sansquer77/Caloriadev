@@ -14,6 +14,14 @@ except ImportError:
     TACO_AVAILABLE = False
     print("Módulo TACO não disponível")
 
+# Importar módulo Open Food Facts
+try:
+    from openfoodfacts_api import get_nutrition_openfoodfacts, search_product_by_barcode
+    OPENFOODFACTS_AVAILABLE = True
+except ImportError:
+    OPENFOODFACTS_AVAILABLE = False
+    print("Módulo Open Food Facts não disponível")
+
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions'
 
@@ -351,6 +359,81 @@ def get_nutrition_from_taco(food_items: List[Tuple[str, float]]) -> Dict:
     }
 
 
+def get_nutrition_from_openfoodfacts(food_items: List[Tuple[str, float]], barcode: Optional[str] = None) -> Dict:
+    """
+    Busca nutrição de múltiplos itens na API Open Food Facts.
+    Retorna dicionário com nutrients, found_items e not_found.
+    """
+    if not OPENFOODFACTS_AVAILABLE:
+        return {'nutrients': {}, 'found_items': [], 'not_found': food_items}
+    
+    total_nutrients = {
+        'calories': 0.0,
+        'protein': 0.0,
+        'fat_total': 0.0,
+        'fat_saturated': 0.0,
+        'carbs': 0.0,
+        'sugar': 0.0,
+        'fiber': 0.0,
+        'sodium': 0.0,
+        'potassium': 0.0,
+        'cholesterol': 0.0
+    }
+    
+    found_items = []
+    not_found_items = []
+    
+    # Se tem código de barras, buscar primeiro
+    if barcode and len(food_items) == 1:
+        food_name, quantity = food_items[0]
+        nutrition = get_nutrition_openfoodfacts(food_name, quantity, barcode=barcode)
+        
+        if nutrition:
+            print(f"✅ Open Food Facts encontrou (barcode): {nutrition.get('original_name', food_name)}")
+            found_items.append({
+                'name': food_name,
+                'quantity': f"{quantity}g",
+                'matched': nutrition.get('original_name', food_name),
+                'brand': nutrition.get('brand', ''),
+                'source': 'Open Food Facts'
+            })
+            
+            for key in total_nutrients:
+                total_nutrients[key] += nutrition.get(key, 0)
+            
+            return {
+                'nutrients': total_nutrients,
+                'found_items': found_items,
+                'not_found': []
+            }
+    
+    # Buscar cada item por nome
+    for food_name, quantity in food_items:
+        nutrition = get_nutrition_openfoodfacts(food_name, quantity)
+        
+        if nutrition:
+            print(f"✅ Open Food Facts encontrou: {food_name} → {nutrition.get('original_name', food_name)}")
+            found_items.append({
+                'name': food_name,
+                'quantity': f"{quantity}g",
+                'matched': nutrition.get('original_name', food_name),
+                'brand': nutrition.get('brand', ''),
+                'source': 'Open Food Facts'
+            })
+            
+            for key in total_nutrients:
+                total_nutrients[key] += nutrition.get(key, 0)
+        else:
+            print(f"❌ Open Food Facts não encontrou: {food_name}")
+            not_found_items.append((food_name, quantity))
+    
+    return {
+        'nutrients': total_nutrients,
+        'found_items': found_items,
+        'not_found': not_found_items
+    }
+
+
 def get_nutrition_from_perplexity(food_items: List[Tuple[str, float]]) -> Optional[Dict]:
     """
     Busca nutrição de itens usando Perplexity (fallback).
@@ -364,20 +447,23 @@ def get_nutrition_from_perplexity(food_items: List[Tuple[str, float]]) -> Option
     return analyze_meal_with_perplexity(items_text)
 
 
-def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
+def analyze_meal_by_text(meal_text: str, barcode: Optional[str] = None) -> Optional[Dict]:
     """
     Analisa texto descrevendo alimentos.
     
     Fluxo:
     1. Identifica os itens e quantidades no texto
-    2. Busca cada item na tabela TACO (fonte primária)
-    3. Para itens não encontrados, usa Perplexity (fallback)
-    4. Soma os valores nutricionais de todas as fontes
+    2. Busca cada item na tabela TACO (fonte primária - brasileira)
+    3. Para itens não encontrados, busca no Open Food Facts (API gratuita global)
+    4. Para itens ainda não encontrados, usa Perplexity (fallback final)
+    5. Soma os valores nutricionais de todas as fontes
     """
     if not meal_text or len(meal_text.strip()) < 3:
         return {'error': 'Descrição muito curta. Forneça mais detalhes sobre os alimentos.'}
     
     print(f"\n=== Analisando: {meal_text} ===")
+    if barcode:
+        print(f"Código de barras: {barcode}")
     
     # 1. Extrair itens e quantidades
     food_items = parse_food_items(meal_text)
@@ -387,6 +473,35 @@ def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
         # Se não conseguiu extrair itens, usa Perplexity direto
         print("Não foi possível extrair itens, usando Perplexity diretamente...")
         return analyze_meal_with_perplexity(meal_text)
+    
+    # Se tem código de barras, tentar Open Food Facts primeiro
+    if barcode:
+        print(f"Buscando por código de barras no Open Food Facts: {barcode}")
+        off_result = get_nutrition_from_openfoodfacts(food_items, barcode=barcode)
+        
+        if off_result.get('found_items'):
+            found_items = off_result.get('found_items', [])
+            total_nutrients = off_result.get('nutrients', {})
+            
+            result = {
+                'calories': total_nutrients.get('calories', 0),
+                'protein': total_nutrients.get('protein', 0),
+                'fat_total': total_nutrients.get('fat_total', 0),
+                'fat_saturated': total_nutrients.get('fat_saturated', 0),
+                'fat_polyunsaturated': 0.0,
+                'fat_monounsaturated': 0.0,
+                'carbs': total_nutrients.get('carbs', 0),
+                'sugar': total_nutrients.get('sugar', 0),
+                'fiber': total_nutrients.get('fiber', 0),
+                'sodium': total_nutrients.get('sodium', 0),
+                'potassium': total_nutrients.get('potassium', 0),
+                'cholesterol': total_nutrients.get('cholesterol', 0),
+                'items_detected': [item.get('matched', item.get('name', '')) for item in found_items],
+                'source': 'Open Food Facts'
+            }
+            
+            print(f"Resultado (código de barras): {result}")
+            return result
     
     # 2. Buscar na TACO primeiro
     taco_result = get_nutrition_from_taco(food_items)
@@ -399,7 +514,27 @@ def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
     if found_items:
         sources.append('TACO')
     
-    # 3. Para itens não encontrados, usar Perplexity
+    # 3. Para itens não encontrados na TACO, buscar no Open Food Facts
+    if not_found and OPENFOODFACTS_AVAILABLE:
+        print(f"Buscando no Open Food Facts: {not_found}")
+        off_result = get_nutrition_from_openfoodfacts(not_found)
+        
+        off_found = off_result.get('found_items', [])
+        off_not_found = off_result.get('not_found', [])
+        off_nutrients = off_result.get('nutrients', {})
+        
+        if off_found:
+            sources.append('Open Food Facts')
+            found_items.extend(off_found)
+            
+            # Somar nutrientes do Open Food Facts
+            for key in total_nutrients:
+                total_nutrients[key] = total_nutrients.get(key, 0) + off_nutrients.get(key, 0)
+        
+        # Atualizar lista de não encontrados
+        not_found = off_not_found
+    
+    # 4. Para itens ainda não encontrados, usar Perplexity
     if not_found:
         print(f"Buscando no Perplexity: {not_found}")
         perplexity_result = get_nutrition_from_perplexity(not_found)
@@ -419,13 +554,13 @@ def analyze_meal_by_text(meal_text: str) -> Optional[Dict]:
                     'source': 'Perplexity'
                 })
     
-    # 4. Verificar se encontrou algo
+    # 5. Verificar se encontrou algo
     if not found_items and not total_nutrients.get('calories', 0):
         # Fallback total: usar Perplexity para tudo
         print("Nenhum item encontrado, usando Perplexity para análise completa...")
         return analyze_meal_with_perplexity(meal_text)
     
-    # 5. Montar resultado final
+    # 6. Montar resultado final
     source_str = ' + '.join(sources) if sources else 'Estimativa'
     
     result = {
@@ -465,11 +600,67 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
     return nutrients
 
 
-def analyze_meal_by_description(description: str) -> Optional[Dict]:
+def analyze_meal_by_barcode(barcode: str, quantity_grams: float = 100.0) -> Optional[Dict]:
     """
-    Analisa refeição por descrição textual.
+    Analisa produto por código de barras usando Open Food Facts.
+    
+    Args:
+        barcode: Código de barras do produto (EAN-13, UPC, etc.)
+        quantity_grams: Quantidade consumida em gramas
+    
+    Returns:
+        Dicionário com dados nutricionais ou erro
+    """
+    if not barcode or len(barcode.strip()) < 8:
+        return {'error': 'Código de barras inválido. Deve ter pelo menos 8 dígitos.'}
+    
+    barcode = barcode.strip()
+    print(f"\n=== Analisando código de barras: {barcode} ===")
+    
+    if not OPENFOODFACTS_AVAILABLE:
+        return {'error': 'Módulo Open Food Facts não disponível.'}
+    
+    # Buscar no Open Food Facts
+    nutrition = get_nutrition_openfoodfacts("Produto", quantity_grams, barcode=barcode)
+    
+    if nutrition:
+        result = {
+            'calories': nutrition.get('calories', 0),
+            'protein': nutrition.get('protein', 0),
+            'fat_total': nutrition.get('fat_total', 0),
+            'fat_saturated': nutrition.get('fat_saturated', 0),
+            'fat_polyunsaturated': 0.0,
+            'fat_monounsaturated': 0.0,
+            'carbs': nutrition.get('carbs', 0),
+            'sugar': nutrition.get('sugar', 0),
+            'fiber': nutrition.get('fiber', 0),
+            'sodium': nutrition.get('sodium', 0),
+            'potassium': nutrition.get('potassium', 0),
+            'cholesterol': nutrition.get('cholesterol', 0),
+            'items_detected': [nutrition.get('name', 'Produto')],
+            'description': f"{nutrition.get('name', 'Produto')} ({nutrition.get('brand', '')})" if nutrition.get('brand') else nutrition.get('name', 'Produto'),
+            'source': 'Open Food Facts',
+            'nutrition_grade': nutrition.get('nutrition_grade', '')
+        }
+        
+        print(f"Resultado (barcode): {result}")
+        return result
+    else:
+        return {'error': f'Produto não encontrado para o código de barras: {barcode}. Tente descrever manualmente.'}
+
+
+def analyze_meal_by_description(description: str, barcode: Optional[str] = None) -> Optional[Dict]:
+    """
+    Analisa refeição por descrição textual ou código de barras.
     O Perplexity entende português diretamente, não precisa traduzir.
     """
+    # Se tem código de barras, usar análise específica
+    if barcode:
+        result = analyze_meal_by_barcode(barcode)
+        if result and 'error' not in result:
+            return result
+        # Se falhou, continua com análise por texto
+    
     original_description = description.strip()
     
     # Perplexity entende português, então passamos direto

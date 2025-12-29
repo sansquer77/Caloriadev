@@ -350,7 +350,7 @@ def similarity_score(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
-def search_taco(food_name: str, threshold: float = 0.6) -> Optional[Dict]:
+def search_taco(food_name: str, threshold: float = 0.4) -> Optional[Dict]:
     """
     Busca um alimento na tabela TACO.
     
@@ -394,7 +394,7 @@ def search_taco(food_name: str, threshold: float = 0.6) -> Optional[Dict]:
             conn.close()
             return result
         
-        # 2. Busca parcial (LIKE)
+        # 2. Busca parcial (LIKE) - termo contido no nome do alimento
         cursor.execute(
             "SELECT * FROM alimentos WHERE nome_normalizado LIKE ? LIMIT 10",
             (f"%{normalized}%",)
@@ -402,6 +402,18 @@ def search_taco(food_name: str, threshold: float = 0.6) -> Optional[Dict]:
         rows = cursor.fetchall()
         
         if rows:
+            # Se só tem uma palavra na busca, pegar o primeiro resultado mais simples
+            if len(normalized.split()) == 1:
+                # Preferir o item mais curto/simples que contém a palavra
+                best_match = min(rows, key=lambda r: len(r['nome_normalizado']))
+                result = dict(best_match)
+                result['match_type'] = 'contains'
+                result['match_score'] = 1.0
+                result['source'] = 'TACO'
+                _taco_cache[normalized] = result
+                conn.close()
+                return result
+            
             # Encontrar melhor match por similaridade
             best_match = None
             best_score = 0
@@ -421,7 +433,7 @@ def search_taco(food_name: str, threshold: float = 0.6) -> Optional[Dict]:
                 conn.close()
                 return result
         
-        # 3. Busca por palavras-chave
+        # 3. Busca por palavras-chave (quando tem múltiplas palavras)
         words = normalized.split()
         if len(words) > 1:
             for word in words:
