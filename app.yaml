@@ -1,0 +1,51 @@
+# 🚀 Configuração para DigitalOcean App Platform
+# Salve como app.yaml na raiz do repositório
+
+name: caloriadev
+services:
+  - name: caloriadev-web
+    github:
+      repo: sansquer77/Caloriadev
+      branch: main
+      deploy_on_push: true
+    build_command: pip install -r requirements.txt
+    run_command: streamlit run app.py --server.enableCORS=false --server.enableXsrfProtection=false
+    http_port: 8501
+    instance_count: 1
+    instance_size_slug: basic-s
+    source_dir: /
+    envs:
+      - key: PERPLEXITY_API_KEY
+        scope: RUN_TIME
+        value: ${PERPLEXITY_API_KEY}
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: sqlite:///./caloria.db
+      - key: STREAMLIT_SERVER_PORT
+        scope: RUN_TIME
+        value: "8501"
+      - key: STREAMLIT_LOGGER_LEVEL
+        scope: RUN_TIME
+        value: info
+      - key: STREAMLIT_SERVER_HEADLESS
+        scope: RUN_TIME
+        value: "true"
+      - key: STREAMLIT_CLIENT_TOOLBAR_MODE
+        scope: RUN_TIME
+        value: viewer
+    health_check:
+      http_path: /_stcore/health
+    log_destination_ref: caloriadev-logs
+
+databases:
+  - name: caloria-db
+    engine: SQLITE
+    version: "3"
+    production: true
+
+static_sites: []
+
+jobs: []
+
+# Variáveis de ambiente que precisam ser setadas no dashboard:
+# PERPLEXITY_API_KEY: seu_token_aqui
