@@ -1,9 +1,13 @@
 """
 Módulo de configuração do banco de dados.
 Suporta SQLite (desenvolvimento), MySQL e PostgreSQL (produção).
+
+Arquitetura aprimorada:
+- caloria.db: Banco principal (users, meals, OFF cache) ✅ Backupavel
+- taco.db: Banco de referência (TACO - dados estáticos) - não precisa backup
 """
 
-from sqlalchemy import create_engine, Column, Integer, Float, Date, String, ForeignKey, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, Float, Date, String, ForeignKey, DateTime, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from contextlib import contextmanager
@@ -112,9 +116,84 @@ class Meal(Base):
     user = relationship('User', back_populates='meals')
 
 
+class OpenFoodFactsCache(Base):
+    """⭐ NOVA TABELA: Cache do Open Food Facts no banco principal
+    
+    Benefícios:
+    - Sincronização automática com backup (um banco único)
+    - Compartilhado entre todos os usuários
+    - Sem limite de 1500 itens (usa LRU de 90 dias)
+    - Rastreamento de acesso para análise
+    - Pode ser incluído/excluído do backup conforme necessário
+    """
+    __tablename__ = 'open_food_facts_cache'
+    
+    id = Column(Integer, primary_key=True)
+    food_name = Column(String(255), nullable=False)  # Nome normalizado (índice)
+    barcode = Column(String(20), nullable=True, unique=True)  # Código de barras (índice)
+    
+    # Dados do produto
+    product_name = Column(String(255), nullable=False)  # Nome completo
+    brand = Column(String(255), nullable=True)
+    
+    # Nutrientes (por 100g - base da API)
+    calories = Column(Float, nullable=False, default=0)
+    protein = Column(Float, nullable=False, default=0)
+    fat_total = Column(Float, nullable=False, default=0)
+    fat_saturated = Column(Float, nullable=False, default=0)
+    carbs = Column(Float, nullable=False, default=0)
+    sugar = Column(Float, nullable=False, default=0)
+    fiber = Column(Float, nullable=False, default=0)
+    sodium = Column(Float, nullable=False, default=0)
+    potassium = Column(Float, nullable=False, default=0)
+    cholesterol = Column(Float, nullable=False, default=0)
+    
+    # Metadados
+    nutrition_grade = Column(String(5), nullable=True)  # A-E (Open Food Facts)
+    serving_size = Column(String(50), nullable=True)  # Ex: "100g", "200ml"
+    image_url = Column(Text, nullable=True)
+    
+    # Rastreamento
+    cached_at = Column(DateTime, default=datetime.utcnow)  # Quando foi cachado
+    accessed_at = Column(DateTime, default=datetime.utcnow)  # Último acesso
+    hits = Column(Integer, default=1)  # Contador de acessos
+    
+    # Controle de versão
+    # True = incluir no backup, False = excluir do backup
+    include_in_backup = Column(Boolean, default=True)
+
+
 def init_db():
     """Inicializa o banco de dados criando todas as tabelas."""
     Base.metadata.create_all(engine)
+    
+    # Criar índices para cache OFF
+    try:
+        conn = engine.raw_connection()
+        cursor = conn.cursor()
+        
+        # Índice para busca rápida por nome
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_off_food_name 
+            ON open_food_facts_cache(food_name)
+        ''')
+        
+        # Índice para busca por código de barras
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_off_barcode 
+            ON open_food_facts_cache(barcode)
+        ''')
+        
+        # Índice para limpeza de cache expirado (90 dias)
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_off_accessed_at 
+            ON open_food_facts_cache(accessed_at)
+        ''')
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Aviso: Erro ao criar índices: {e}")
 
 
 def get_session():
