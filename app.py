@@ -66,6 +66,25 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
+def init_session_state():
+    """Inicializa chaves usadas em st.session_state com valores padrão sem sobrescrever."""
+    defaults = {
+        'logged_in': False,
+        'user_id': None,
+        'username': 'Convidado',
+        'reset_form': False,
+        'desc_input': '',
+        'barcode_input': '',
+        'barcode_quantity': 100,
+        'meal_type': 'lunch',
+        'meal_date': date.today(),
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
 def show_settings_page():
     """Página de configurações."""
     st.markdown("## ⚙️ Configurações")

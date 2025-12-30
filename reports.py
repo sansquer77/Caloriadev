@@ -85,16 +85,16 @@ def get_daily_breakdown(user_id: int, start_date: date, end_date: date) -> List[
             func.sum(Meal.fat_total).label('fat_total'),
             func.sum(Meal.sugar).label('sugar'),
             func.sum(Meal.fiber).label('fiber'),
+            func.sum(Meal.sodium).label('sodium'),
             func.count(Meal.id).label('meal_count')
         ).filter(
             Meal.user_id == user_id,
             Meal.date >= start_date,
             Meal.date <= end_date
         ).group_by(Meal.date).order_by(Meal.date).all()
-        
         rows = []
         for r in results:
-            # Meal.date is stored as 'YYYY-MM-DD' string in the DB; ensure date object
+            # Meal.date may be stored as string; coerce to date when possible
             d = r.date
             if isinstance(d, str):
                 try:
@@ -103,20 +103,20 @@ def get_daily_breakdown(user_id: int, start_date: date, end_date: date) -> List[
                     try:
                         d = datetime.strptime(d, '%Y-%m-%d').date()
                     except Exception:
-                        # fallback: leave as-is
                         pass
 
             rows.append({
-            'date': d,
-            'calories': r.calories or 0,
-            'protein': r.protein or 0,
-            'carbs': r.carbs or 0,
-            'fat_total': r.fat_total or 0,
-            'sugar': r.sugar or 0,
-            'fiber': r.fiber or 0,
-            'sodium': r.sodium or 0,
-            'meal_count': r.meal_count or 0
-        } for r in rows]
+                'date': d,
+                'calories': float(r.calories or 0),
+                'protein': float(r.protein or 0),
+                'carbs': float(r.carbs or 0),
+                'fat_total': float(r.fat_total or 0),
+                'sugar': float(r.sugar or 0),
+                'fiber': float(r.fiber or 0),
+                'sodium': float(getattr(r, 'sodium', 0) or 0),
+                'meal_count': int(r.meal_count or 0)
+            })
+        return rows
     finally:
         session.close()
 
