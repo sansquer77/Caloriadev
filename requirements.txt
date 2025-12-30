@@ -15,6 +15,7 @@ aiohttp>=3.9.0
 
 # AI/ML
 google-generativeai>=0.3.0  # Google Gemini para análise de fotos
+reportlab>=3.6.12  # Para geração de PDFs em Relatórios
 
 # Data Processing
 pandas>=2.1.0

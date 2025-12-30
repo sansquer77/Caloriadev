@@ -19,6 +19,8 @@ Aplicativo de análise nutricional inteligente que permite fotografar refeiçõe
 - 🗺️ **Mapa de Refeições**: Visualize seus locais de alimentação no mapa
 - 📈 **Histórico**: Acompanhe seu consumo ao longo do tempo
 - 📊 **Resumo Diário/Semanal**: Monitore suas metas nutricionais
+- 🧭 **Nome do Local (opcional)**: Escolha ou informe um nome de local cadastrado
+- (O suporte a coordenadas e mapa foi removido nesta versão)
 
 ## 🛠️ Tecnologias
 
@@ -155,19 +157,25 @@ O app suporta busca por código de barras de produtos industrializados usando a 
 1. **Cadastre-se** com usuário e senha
 2. **Faça login** na sua conta
 3. **Tire uma foto** do seu prato ou descreva a refeição
-4. **(Opcional)** Adicione sua localização (latitude/longitude)
+4. **(Opcional)** Informe o nome do local onde a refeição foi feita (campo opcional)
 5. **Clique em Analisar** e veja os nutrientes
-6. **Acompanhe** seu histórico e veja o mapa de refeições
+6. **Acompanhe** seu histórico
 
-## 🗺️ Localização
+## 📍 Localização (atual)
 
-O app permite registrar a localização de cada refeição. Para isso:
+O app atualmente não armazena coordenadas (latitude/longitude) nem fornece um mapa.
+Permanece disponível um campo opcional **Nome do Local** onde você pode escolher
+um local previamente cadastrado ou digitar um novo nome (ex: "Restaurante XYZ").
 
-1. Use um app de GPS para obter suas coordenadas
-2. Insira latitude e longitude no formulário
-3. Opcionalmente, nomeie o local (ex: "Restaurante XYZ")
-4. Visualize todos os locais na seção "Mapa de Refeições"
-5. Clique para abrir no Google Maps
+Observação: referências antigas a coordenadas e ao mapa foram removidas nesta
+versão para simplificar o registro de refeições.
+
+## 🧩 Parser de Refeições (opcional)
+
+O módulo `meal_parser.py` fornece uma abordagem alternativa para descrições
+complexas: ele quebra a descrição em itens individuais, analisa cada item
+separadamente (usando as mesmas fontes: TACO → Open Food Facts → Perplexity)
+e agrega os nutrientes. Use esse módulo se quiser análises mais granulares.
 
 ## 📄 Licença
 

@@ -39,8 +39,6 @@ class MealData:
     potassium: float = 0.0
     cholesterol: float = 0.0
     description: str = ""
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
     location_name: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
     items_detected: List[str] = field(default_factory=list)

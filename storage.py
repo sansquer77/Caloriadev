@@ -113,7 +113,7 @@ def get_meals_with_location(user_id: int, start_date: date = None, end_date: dat
 
         return [{
             'id': meal.id,
-            'date': meal.date,
+            'date': meal.date if isinstance(meal.date, date) else datetime.strptime(str(meal.date), '%Y-%m-%d').date() if meal.date else None,
             'meal_type': meal.meal_type,
             'description': meal.description,
             'calories': meal.calories,
@@ -134,7 +134,7 @@ def get_user_meals(user_id: int, limit: int = 50) -> List[Dict]:
         
         return [{
             'id': meal.id,
-            'date': meal.date,
+            'date': meal.date if isinstance(meal.date, date) else datetime.strptime(str(meal.date), '%Y-%m-%d').date() if meal.date else None,
             'meal_type': meal.meal_type,
             'description': meal.description,
             'calories': meal.calories,
