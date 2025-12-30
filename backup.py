@@ -59,14 +59,14 @@ def export_to_json(filepath: Optional[str] = None) -> str:
             users_data.append({
                 'id': user.id,
                 'username': user.username,
-                'password_hash': user.password_hash,
-                'weight': user.weight,
-                'height': user.height,
-                'cal_limit': user.cal_limit,
-                'protein_limit': user.protein_limit,
-                'fat_limit': user.fat_limit,
-                'carbs_limit': user.carbs_limit,
-                'sugar_limit': user.sugar_limit,
+                'password_hash': user.hashed_password,
+                'weight': user.peso_kg,
+                'height': (user.altura_cm / 100.0) if user.altura_cm else None,
+                'cal_limit': user.calorias_diarias,
+                'protein_limit': user.proteina_pct,
+                'fat_limit': user.gordura_pct,
+                'carbs_limit': user.carboidrato_pct,
+                'sugar_limit': None,
                 'created_at': user.created_at
             })
         
@@ -90,8 +90,7 @@ def export_to_json(filepath: Optional[str] = None) -> str:
                 'sodium': meal.sodium,
                 'potassium': meal.potassium,
                 'cholesterol': meal.cholesterol,
-                'latitude': meal.latitude,
-                'longitude': meal.longitude,
+                # latitude/longitude removed from schema
                 'location_name': meal.location_name,
                 'created_at': meal.created_at
             })
@@ -169,16 +168,16 @@ def import_from_json(filepath: str, clear_existing: bool = False) -> Dict:
                     user_id_map[user_data['id']] = existing.id
                     stats['users_skipped'] += 1
                 else:
+                    # Mapear para os nomes de campo do modelo atual
                     user = User(
                         username=user_data['username'],
-                        password_hash=user_data['password_hash'],
-                        weight=user_data.get('weight'),
-                        height=user_data.get('height'),
-                        cal_limit=user_data.get('cal_limit'),
-                        protein_limit=user_data.get('protein_limit'),
-                        fat_limit=user_data.get('fat_limit'),
-                        carbs_limit=user_data.get('carbs_limit'),
-                        sugar_limit=user_data.get('sugar_limit'),
+                        hashed_password=user_data.get('password_hash'),
+                        peso_kg=user_data.get('weight'),
+                        altura_cm=int(user_data.get('height') * 100) if user_data.get('height') else None,
+                        calorias_diarias=user_data.get('cal_limit'),
+                        proteina_pct=user_data.get('protein_limit'),
+                        gordura_pct=user_data.get('fat_limit'),
+                        carboidrato_pct=user_data.get('carbs_limit'),
                         created_at=user_data.get('created_at', datetime.now())
                     )
                     session.add(user)
@@ -214,8 +213,7 @@ def import_from_json(filepath: str, clear_existing: bool = False) -> Dict:
                     sodium=meal_data.get('sodium', 0),
                     potassium=meal_data.get('potassium', 0),
                     cholesterol=meal_data.get('cholesterol', 0),
-                    latitude=meal_data.get('latitude'),
-                    longitude=meal_data.get('longitude'),
+                    # latitude/longitude removed from schema
                     location_name=meal_data.get('location_name'),
                     created_at=meal_data.get('created_at', datetime.now())
                 )

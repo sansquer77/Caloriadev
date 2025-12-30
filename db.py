@@ -34,7 +34,7 @@ class User(Base):
     
     # ===== AUTENTICAÇÃO =====
     username = Column(String(100), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, index=True, nullable=True)
     hashed_password = Column(String(255), nullable=False)
     
     # ===== PERFIL BÁSICO =====
@@ -265,8 +265,8 @@ def get_db_session():
 
 
 def get_session():
-    """Alias compatível para `get_db_session()`."""
-    return get_db_session()
+    """Retorna uma nova sessão SQLAlchemy (não gerenciador de contexto)."""
+    return SessionLocal()
 
 
 # ===== EXPORTAR SQLITE_PATH PARA COMPATIBILIDADE =====
