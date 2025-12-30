@@ -211,16 +211,28 @@ def get_nutrition_openfoodfacts(food_name: str, quantity_grams: float = 100.0, b
     if not result:
         return None
     
-    # Ajustar para a quantidade especificada
-    factor = quantity_grams / 100.0
-    
+    # Ajustar para a porção real do produto, se disponível
+    serving_size_str = result.get('serving_size', '100g')
+    # Tentar extrair valor numérico e unidade
+    import re
+    match = re.search(r'(\d+(?:\.\d+)?)\s*(g|gr|ml)', serving_size_str.lower())
+    if match:
+        serving_value = float(match.group(1))
+        serving_unit = match.group(2)
+    else:
+        serving_value = 100.0
+        serving_unit = 'g'
+
+    # Se a quantidade solicitada for diferente da porção, ajusta pelo fator
+    factor = quantity_grams / serving_value if quantity_grams != serving_value else 1.0
+
     # Determinar a fonte
     source = 'Open Food Facts (cache)' if from_cache else 'Open Food Facts'
-    
+
     return {
         'name': result.get('name', food_name),
         'brand': result.get('brand', ''),
-        'quantity': f"{quantity_grams}g",
+        'quantity': f"{quantity_grams}{serving_unit}",
         'calories': result.get('calories', 0) * factor,
         'protein': result.get('protein', 0) * factor,
         'fat_total': result.get('fat_total', 0) * factor,
@@ -234,6 +246,7 @@ def get_nutrition_openfoodfacts(food_name: str, quantity_grams: float = 100.0, b
         'source': source,
         'nutrition_grade': result.get('nutrition_grade', ''),
         'original_name': result.get('name', ''),
+        'serving_size': serving_size_str,
         'cached': from_cache
     }
 

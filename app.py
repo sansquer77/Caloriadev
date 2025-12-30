@@ -443,6 +443,39 @@ def show_analysis_page():
             return
         
         if nutrients:
+            # Permitir ajuste de quantidade antes de mostrar resultados
+            if nutrients.get('quantity_adjustment'):
+                if nutrients.get('type') == 'label':
+                    product_name = nutrients.get('items_detected', ['Produto'])[0]
+                    serving_size = nutrients.get('serving_size', '100g')
+                    st.write(f"🔍 Gemini identificou: {product_name}")
+                    quantity_gr = st.number_input(
+                        f"Qual quantidade você consumiu? ({serving_size})",
+                        min_value=1,
+                        max_value=5000,
+                        value=int(serving_size.replace('g','').replace('ml','').replace('gr','').strip()) if serving_size and serving_size[:2].isdigit() else 100,
+                        step=5
+                    )
+                    # Recalcular nutrientes conforme quantidade
+                    factor = quantity_gr / (int(serving_size.replace('g','').replace('ml','').replace('gr','').strip()) if serving_size and serving_size[:2].isdigit() else 100)
+                    for k in ['calories','protein','fat_total','fat_saturated','carbs','sugar','fiber','sodium','potassium','cholesterol']:
+                        if k in nutrients:
+                            nutrients[k] = nutrients[k] * factor
+                    nutrients['quantity'] = f"{quantity_gr}g"
+                elif nutrients.get('type') == 'food':
+                    items = nutrients.get('items', [])
+                    st.write("🔍 Gemini identificou os seguintes alimentos:")
+                    for item in items:
+                        item['quantity_grams'] = st.slider(
+                            f"Quantidade de {item['name']} (g)",
+                            min_value=10,
+                            max_value=500,
+                            value=int(item.get('quantity_grams', 100)),
+                            step=5
+                        )
+                    # Recalcular nutrientes conforme quantidades (se necessário, depende do fluxo)
+                    # Aqui pode-se chamar novamente a função de análise se quiser precisão
+                    # Exemplo: nutrients = analyze_meal_photo(image_bytes) com as novas quantidades
             show_analysis_results(nutrients, meal_type, meal_date, location_name)
         else:
             st.error("❌ Não foi possível analisar a refeição. Tente novamente ou descreva manualmente.")
