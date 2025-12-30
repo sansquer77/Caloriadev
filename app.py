@@ -793,14 +793,31 @@ def show_backup_page():
                     else:
                         st.info("Marque a confirmação para habilitar a restauração.")
 
-# Main
+
+# ===== Login Page (mínimo) =====
+def show_login_page():
+    st.markdown("## 🔐 Login")
+    username = st.text_input("Usuário")
+    password = st.text_input("Senha", type="password")
+    if st.button("Entrar", type="primary"):
+        user = get_user_by_username(username)
+        if user and verify_password_hash(user['password_hash'], password):
+            st.session_state.logged_in = True
+            st.session_state.user_id = user['id']
+            st.session_state.username = user['username']
+            st.success("Login realizado com sucesso!")
+            st.experimental_rerun()
+        else:
+            st.error("Usuário ou senha inválidos.")
+    st.info("Ainda não tem conta? Peça para um administrador cadastrar.")
+
+
 init_session_state()
 
 if not st.session_state.logged_in:
     show_login_page()
 else:
     page = show_sidebar()
-
     if page == "🍽️ Nova Análise":
         show_analysis_page()
     elif page == "📊 Resumo Diário":
