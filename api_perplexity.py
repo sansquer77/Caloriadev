@@ -830,7 +830,18 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
 
             # Montar nome de busca com marca
             search_name = f"{product_name} {brand}".strip() if brand else product_name
-            food_items = [(search_name, 100.0)]
+
+            # Tentar extrair porção real do nome ou do serving_size
+            serving_val = 100.0
+            serving_unit = 'g'
+            if serving_size:
+                import re
+                match = re.search(r'(\d+(?:\.\d+)?)\s*(g|gr|ml)', str(serving_size).lower())
+                if match:
+                    serving_val = float(match.group(1))
+                    serving_unit = match.group(2)
+
+            food_items = [(search_name, serving_val)]
 
             # Tentar Open Food Facts
             if OPENFOODFACTS_AVAILABLE:
@@ -855,7 +866,7 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
                         'items_detected': [product_name],
                         'description': f"{product_name} ({brand})" if brand else product_name,
                         'source': 'Open Food Facts (via Gemini)',
-                        'serving_size': serving_size or '100g',
+                        'serving_size': serving_size or f'{serving_val}{serving_unit}',
                         'quantity_adjustment': True
                     }
                     print(f"Nutrientes do OFF: {result}")
