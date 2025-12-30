@@ -446,22 +446,31 @@ def show_analysis_page():
             # Permitir ajuste de quantidade antes de mostrar resultados
             if nutrients.get('quantity_adjustment'):
                 if nutrients.get('type') == 'label':
+                    import re
                     product_name = nutrients.get('items_detected', ['Produto'])[0]
                     serving_size = nutrients.get('serving_size', '100g')
                     st.write(f"🔍 Gemini identificou: {product_name}")
+                    # Extrair valor numérico e unidade da porção
+                    match = re.search(r'(\d+(?:\.\d+)?)\s*(g|gr|ml)', str(serving_size).lower())
+                    if match:
+                        default_qty = float(match.group(1))
+                        unit = match.group(2)
+                    else:
+                        default_qty = 100.0
+                        unit = 'g'
                     quantity_gr = st.number_input(
                         f"Qual quantidade você consumiu? ({serving_size})",
                         min_value=1,
                         max_value=5000,
-                        value=int(serving_size.replace('g','').replace('ml','').replace('gr','').strip()) if serving_size and serving_size[:2].isdigit() else 100,
+                        value=int(default_qty),
                         step=5
                     )
                     # Recalcular nutrientes conforme quantidade
-                    factor = quantity_gr / (int(serving_size.replace('g','').replace('ml','').replace('gr','').strip()) if serving_size and serving_size[:2].isdigit() else 100)
+                    factor = quantity_gr / default_qty
                     for k in ['calories','protein','fat_total','fat_saturated','carbs','sugar','fiber','sodium','potassium','cholesterol']:
                         if k in nutrients:
                             nutrients[k] = nutrients[k] * factor
-                    nutrients['quantity'] = f"{quantity_gr}g"
+                    nutrients['quantity'] = f"{quantity_gr}{unit}"
                 elif nutrients.get('type') == 'food':
                     items = nutrients.get('items', [])
                     st.write("🔍 Gemini identificou os seguintes alimentos:")
