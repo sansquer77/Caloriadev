@@ -220,9 +220,9 @@ def analyze_meal_with_perplexity(meal_text: str) -> Optional[Dict]:
 4. USDA FoodData Central (apenas como último recurso)
 
 REGRAS IMPORTANTES:
-- NÃO estime valores. Use APENAS dados oficiais de rótulos ou tabelas.
-- Se for produto industrializado, busque o rótulo oficial da marca.
-- Se não encontrar dados oficiais, retorne "not_found": true
+- Prioritize official sources, but if not available, use reliable secondary sources from nutrition databases (TACO, OFF, nutrition websites).. Use APENAS dados oficiais de rótulos ou tabelas.
+- For processed/industrialized foods, accept label data or reliable nutritional websites as valid sources.
+- Return "not_found": true ONLY if data cannot be found from ANY reliable source (not just official).
 
 Retorne APENAS JSON neste formato:
 {{"items":["{meal_text}"],"calories":0,"protein":0,"fat_total":0,"fat_saturated":0,"carbs":0,"sugar":0,"fiber":0,"sodium":0,"source":"nome da fonte","not_found":false}}
