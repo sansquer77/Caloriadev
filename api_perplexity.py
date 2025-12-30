@@ -873,13 +873,15 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
                     return result
 
             # Tentar Perplexity como fallback final
-            perplexity_result = get_nutrition_from_perplexity(food_items)
+            # Usar a mesma porção real (serving_val) para consulta
+            perplexity_food_items = [(search_name, serving_val)]
+            perplexity_result = get_nutrition_from_perplexity(perplexity_food_items)
             if perplexity_result and 'error' not in perplexity_result:
                 print(f"✅ Perplexity encontrou nutrientes para o rótulo")
                 perplexity_result['items_detected'] = [product_name]
                 perplexity_result['description'] = f"{product_name} ({brand})" if brand else product_name
                 perplexity_result['source'] = 'Perplexity (via Gemini)'
-                perplexity_result['serving_size'] = serving_size or '100g'
+                perplexity_result['serving_size'] = serving_size or f'{serving_val}{serving_unit}'
                 perplexity_result['quantity_adjustment'] = True
                 return perplexity_result
 
