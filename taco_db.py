@@ -1,6 +1,8 @@
 """
 Módulo para gerenciar a tabela TACO (Tabela Brasileira de Composição de Alimentos).
-Baixa a tabela oficial e armazena em SQLite para buscas rápidas.
+Baixa a tabela oficial e armazena no banco caloria.db para buscas rápidas.
+
+ATUALIZAÇÃO: Agora usa o banco consolidado caloria.db em vez de taco.db separado.
 """
 
 import os
@@ -11,8 +13,9 @@ from typing import Optional, Dict, List
 import re
 from difflib import SequenceMatcher
 
-# Caminho do banco de dados TACO
-TACO_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taco.db')
+# ATUALIZADO: Usar o mesmo banco caloria.db
+TACO_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'caloria.db')
+
 # URLs alternativas para download da tabela TACO (a maioria dos sites bloqueiam download direto)
 # Se todas falharem, criamos uma tabela com alimentos básicos brasileiros
 TACO_URLS = [
@@ -144,9 +147,10 @@ def create_basic_taco_table() -> bool:
         conn = sqlite3.connect(TACO_DB_PATH)
         cursor = conn.cursor()
         
-        # Criar tabela
+        # Criar tabela - agora usando IF NOT EXISTS para não sobrescrever se já existir
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS alimentos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nome TEXT,
                 nome_normalizado TEXT,
                 calorias REAL,
@@ -163,6 +167,14 @@ def create_basic_taco_table() -> bool:
             )
         ''')
         
+        # Verificar se já tem dados
+        cursor.execute("SELECT COUNT(*) FROM alimentos")
+        count = cursor.fetchone()[0]
+        if count > 0:
+            print(f"Tabela TACO já contém {count} alimentos. Pulando inserção.")
+            conn.close()
+            return True
+        
         # Inserir alimentos
         now = datetime.now().isoformat()
         for alimento in alimentos:
@@ -178,7 +190,7 @@ def create_basic_taco_table() -> bool:
             ))
         
         # Criar índice
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_nome ON alimentos(nome_normalizado)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_nome_normalizado ON alimentos(nome_normalizado)')
         conn.commit()
         conn.close()
         
@@ -302,7 +314,7 @@ def convert_xlsx_to_sqlite() -> bool:
         df.to_sql('alimentos', conn, if_exists='replace', index=False)
         
         # Criar índice para busca rápida
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_nome ON alimentos(nome_normalizado)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_nome_normalizado ON alimentos(nome_normalizado)')
         conn.commit()
         conn.close()
         
@@ -543,6 +555,12 @@ def get_taco_stats() -> Dict:
         conn = sqlite3.connect(TACO_DB_PATH)
         cursor = conn.cursor()
         
+        # Verificar se a tabela existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alimentos'")
+        if not cursor.fetchone():
+            conn.close()
+            return {'status': 'not_initialized', 'count': 0}
+        
         cursor.execute("SELECT COUNT(*) FROM alimentos")
         count = cursor.fetchone()[0]
         
@@ -590,7 +608,7 @@ _off_cache: Dict[str, Dict] = {}  # Cache em memória
 
 def init_off_cache_table() -> bool:
     """
-    Inicializa a tabela de cache do Open Food Facts no banco taco.db.
+    Inicializa a tabela de cache do Open Food Facts no banco caloria.db.
     Retorna True se a tabela foi criada/existe.
     """
     try:
@@ -641,6 +659,13 @@ def get_off_cache_count() -> int:
     try:
         conn = sqlite3.connect(TACO_DB_PATH)
         cursor = conn.cursor()
+        
+        # Verificar se a tabela existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='off_cache'")
+        if not cursor.fetchone():
+            conn.close()
+            return 0
+        
         cursor.execute("SELECT COUNT(*) FROM off_cache")
         count = cursor.fetchone()[0]
         conn.close()
@@ -674,6 +699,12 @@ def search_off_cache(food_name: Optional[str] = None, barcode: Optional[str] = N
         conn = sqlite3.connect(TACO_DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        
+        # Verificar se a tabela existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='off_cache'")
+        if not cursor.fetchone():
+            conn.close()
+            return None
         
         row = None
         
