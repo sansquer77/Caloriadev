@@ -150,16 +150,6 @@ def show_settings_page():
                             st.error(f"❌ Erro ao restaurar backup: {e}")
                 else:
                     st.info("Marque a confirmação para habilitar a restauração.")
-                else:
-                    pwd_hash = create_password_hash(new_password)
-                    user_id = create_user(
-                        new_username,
-                        pwd_hash,
-                        weight=weight or None,
-                        height=height or None,
-                        cal_limit=cal_limit or None
-                    )
-                    st.success("Conta criada com sucesso! Faça login.")
 
 def show_sidebar():
     """Exibe sidebar com navegação."""
