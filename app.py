@@ -128,7 +128,7 @@ def show_login_page():
         with st.form("login_form"):
             username = st.text_input("Usuário", key="login_user")
             password = st.text_input("Senha", type='password', key="login_pass")
-            submit = st.form_submit_button("Entrar", use_container_width=True)
+            submit = st.form_submit_button("Entrar", width='stretch')
             
             if submit:
                 user = get_user_by_username(username)
@@ -188,7 +188,7 @@ def show_login_page():
                 carbs_grams = (cal_limit * carbs_pct / 100) / 4
                 st.caption(f"🥩 {protein_grams:.0f}g | 🧈 {fat_grams:.0f}g | 🍞 {carbs_grams:.0f}g")
             
-            submit = st.form_submit_button("Cadastrar", use_container_width=True)
+            submit = st.form_submit_button("Cadastrar", width='stretch')
             
             if submit:
                 if not new_username or not new_password:
@@ -273,7 +273,7 @@ def show_sidebar():
                 st.warning(f"⚠️ Reports: {REPORTS_ERROR or 'N/A'}")
         
         st.divider()
-        if st.button("🚪 Sair", use_container_width=True):
+        if st.button("🚪 Sair", width='stretch'):
             st.session_state.user_id = None
             st.session_state.username = None
             st.session_state.logged_in = False
@@ -346,7 +346,7 @@ def show_analysis_page():
             image_bytes = uploaded_file.getvalue()
         
         if image_bytes:
-            st.image(image_bytes, caption="Imagem para análise", use_container_width=True)
+            st.image(image_bytes, caption="Imagem para análise", width='stretch')
     
     with tab2:
         st.markdown("### ✍️ Descreva sua refeição")
@@ -411,7 +411,7 @@ def show_analysis_page():
     st.divider()
     
     # Botão de análise
-    if st.button("🔍 Analisar Refeição", use_container_width=True, type="primary"):
+    if st.button("🔍 Analisar Refeição", width='stretch', type="primary"):
         nutrients = None
         
         # Análise por código de barras (prioridade se preenchido)
@@ -513,7 +513,7 @@ def show_analysis_results(nutrients, meal_type, meal_date, location_name):
     st.divider()
     st.markdown("### 🎉 Refeição salva! Pronto para a próxima?")
     
-    if st.button("➕ Analisar outra refeição", use_container_width=True, type="primary"):
+    if st.button("➕ Analisar outra refeição", width='stretch', type="primary"):
         # Ativa flag de reset
         st.session_state.reset_form = True
         # Resetar valores
@@ -611,7 +611,7 @@ def show_history():
         'location_name': 'Local'
     })
     
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df, width='stretch', hide_index=True)
     
     # Opção de excluir
     st.divider()
@@ -648,7 +648,7 @@ def show_backup_page():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("💾 Criar Backup JSON", use_container_width=True, type="primary"):
+            if st.button("💾 Criar Backup JSON", width='stretch', type="primary"):
                 with st.spinner("Criando backup..."):
                     try:
                         filepath = export_to_json()
@@ -678,7 +678,7 @@ def show_backup_page():
                     data=db_data,
                     file_name=f"caloria_backup_{timestamp}.db",
                     mime="application/octet-stream",
-                    use_container_width=True
+                    width='stretch'
                 )
             else:
                 st.warning("⚠️ Arquivo do banco de dados não encontrado.")
@@ -894,7 +894,7 @@ def show_reports_page():
     st.divider()
     
     # Botão de geração
-    if st.button("📄 Gerar Relatório PDF", type="primary", use_container_width=True):
+    if st.button("📄 Gerar Relatório PDF", type="primary", width='stretch'):
         with st.spinner("📝 Gerando relatório... Isso pode levar alguns segundos."):
             try:
                 # Gerar PDF
@@ -916,7 +916,7 @@ def show_reports_page():
                     data=pdf_bytes,
                     file_name=filename,
                     mime="application/pdf",
-                    use_container_width=True
+                    width='stretch'
                 )
                 
             except Exception as e:
@@ -1027,7 +1027,7 @@ def show_profile_page():
             
             st.metric(f"{imc_color} IMC", f"{imc:.1f}", imc_status)
         
-        if st.button("💾 Salvar Dados Pessoais", use_container_width=True, type="primary"):
+        if st.button("💾 Salvar Dados Pessoais", width='stretch', type="primary"):
             success = update_user_profile(
                 st.session_state.user_id,
                 weight=new_weight if new_weight > 0 else None,
@@ -1113,7 +1113,7 @@ def show_profile_page():
         with col3:
             st.metric("🍞 Carboidrato", f"{carbs_grams:.0f}g/dia")
         
-        if st.button("💾 Salvar Metas Nutricionais", use_container_width=True, type="primary"):
+        if st.button("💾 Salvar Metas Nutricionais", width='stretch', type="primary"):
             if total_pct != 100:
                 st.error("❌ Os percentuais devem somar 100%!")
             else:
@@ -1141,7 +1141,7 @@ def show_profile_page():
             new_password = st.text_input("Nova Senha", type="password")
             confirm_password = st.text_input("Confirmar Nova Senha", type="password")
             
-            submitted = st.form_submit_button("🔐 Alterar Senha", use_container_width=True)
+            submitted = st.form_submit_button("🔐 Alterar Senha", width='stretch')
             
             if submitted:
                 if not current_password or not new_password or not confirm_password:
