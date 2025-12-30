@@ -92,16 +92,31 @@ def get_daily_breakdown(user_id: int, start_date: date, end_date: date) -> List[
             Meal.date <= end_date
         ).group_by(Meal.date).order_by(Meal.date).all()
         
-        return [{
-            'date': r.date,
+        rows = []
+        for r in results:
+            # Meal.date is stored as 'YYYY-MM-DD' string in the DB; ensure date object
+            d = r.date
+            if isinstance(d, str):
+                try:
+                    d = datetime.fromisoformat(d).date()
+                except Exception:
+                    try:
+                        d = datetime.strptime(d, '%Y-%m-%d').date()
+                    except Exception:
+                        # fallback: leave as-is
+                        pass
+
+            rows.append({
+            'date': d,
             'calories': r.calories or 0,
             'protein': r.protein or 0,
             'carbs': r.carbs or 0,
             'fat_total': r.fat_total or 0,
             'sugar': r.sugar or 0,
             'fiber': r.fiber or 0,
+            'sodium': r.sodium or 0,
             'meal_count': r.meal_count or 0
-        } for r in results]
+        } for r in rows]
     finally:
         session.close()
 
@@ -383,6 +398,7 @@ def generate_pdf_report(
         ['Gorduras', f"{macros['fat_total']:.1f} g", f"{avg_fat:.1f} g"],
         ['Açúcares', f"{macros['sugar']:.1f} g", f"{macros['sugar']/max(days_with_data,1):.1f} g"],
         ['Fibras', f"{macros['fiber']:.1f} g", f"{macros['fiber']/max(days_with_data,1):.1f} g"],
+        ['Sódio', f"{macros.get('sodium', 0):.0f} mg", f"{macros.get('sodium', 0)/max(days_with_data,1):.0f} mg"],
     ]
     
     summary_table = Table(summary_data, colWidths=[6*cm, 5*cm, 5*cm])

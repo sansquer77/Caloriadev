@@ -53,6 +53,7 @@ def get_daily_macros(user_id: int, date_: date) -> Dict[str, float]:
             func.sum(Meal.fat_saturated).label('fat_saturated'),
             func.sum(Meal.carbs).label('carbs'),
             func.sum(Meal.sugar).label('sugar'),
+            func.sum(Meal.sodium).label('sodium'),
             func.sum(Meal.fiber).label('fiber')
         ).filter(
             Meal.user_id == user_id,
@@ -66,7 +67,8 @@ def get_daily_macros(user_id: int, date_: date) -> Dict[str, float]:
             'fat_saturated': result.fat_saturated or 0,
             'carbs': result.carbs or 0,
             'sugar': result.sugar or 0,
-            'fiber': result.fiber or 0
+            'fiber': result.fiber or 0,
+            'sodium': result.sodium or 0
         }
 
 def get_aggregated_macros(user_id: int, start_date: date, end_date: date) -> Dict[str, float]:
@@ -79,7 +81,8 @@ def get_aggregated_macros(user_id: int, start_date: date, end_date: date) -> Dic
             func.sum(Meal.fat_saturated).label('fat_saturated'),
             func.sum(Meal.carbs).label('carbs'),
             func.sum(Meal.sugar).label('sugar'),
-            func.sum(Meal.fiber).label('fiber')
+            func.sum(Meal.fiber).label('fiber'),
+            func.sum(Meal.sodium).label('sodium')
         ).filter(
             Meal.user_id == user_id,
             Meal.date >= start_date,
@@ -93,7 +96,8 @@ def get_aggregated_macros(user_id: int, start_date: date, end_date: date) -> Dic
             'fat_saturated': result.fat_saturated or 0,
             'carbs': result.carbs or 0,
             'sugar': result.sugar or 0,
-            'fiber': result.fiber or 0
+            'fiber': result.fiber or 0,
+            'sodium': result.sodium or 0
         }
 
 def get_meals_with_location(user_id: int, start_date: date = None, end_date: date = None) -> List[Dict]:
@@ -121,6 +125,8 @@ def get_meals_with_location(user_id: int, start_date: date = None, end_date: dat
             'carbs': meal.carbs,
             'fat_total': meal.fat_total,
             'sugar': meal.sugar,
+            'fiber': meal.fiber,
+            'sodium': meal.sodium,
             'location_name': meal.location_name,
             'created_at': meal.created_at
         } for meal in meals]

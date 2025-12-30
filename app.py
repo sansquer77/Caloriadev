@@ -15,11 +15,12 @@ from storage import (
     update_user_profile,
     update_user_password,
     get_user_meals,
-    delete_meal
+    delete_meal,
 )
 from db import init_db, SQLITE_PATH
 import json
 import os
+import shutil
 
 # Importações opcionais com fallback (para evitar erro se reportlab não estiver instalado)
 BACKUP_AVAILABLE = False
@@ -62,152 +63,101 @@ st.set_page_config(
     page_title="Caloria - Análise Nutricional",
     page_icon="🍽️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Inicializa o banco de dados
-init_db()
+def show_settings_page():
+    """Página de configurações."""
+    st.markdown("## ⚙️ Configurações")
 
-# CSS customizado
-st.markdown("""
-<style>
-    .main { padding: 20px; }
-    .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; }
-</style>
-""", unsafe_allow_html=True)
-
-# Funções auxiliares
-def init_session_state():
-    """Inicializa variáveis de sessão com valores padrão."""
-    # Variáveis de autenticação
-    if 'user_id' not in st.session_state:
-        st.session_state.user_id = None
-    if 'username' not in st.session_state:
-        st.session_state.username = None
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-    if 'current_location' not in st.session_state:
-        st.session_state.current_location = None
-
-    # Variáveis de análise (para evitar erro ao resetar)
-    if 'barcode_quantity' not in st.session_state:
-        st.session_state.barcode_quantity = 100
-    if 'meal_type' not in st.session_state:
-        st.session_state.meal_type = "lunch"
-    if 'meal_date' not in st.session_state:
-        st.session_state.meal_date = date.today()
-    if 'loc_name' not in st.session_state:
-        st.session_state.loc_name = ""
-    if 'camera' not in st.session_state:
-        st.session_state.camera = None
-    if 'upload' not in st.session_state:
-        st.session_state.upload = None
-    if 'desc_input' not in st.session_state:
-        st.session_state.desc_input = ""
-    if 'barcode_input' not in st.session_state:
-        st.session_state.barcode_input = ""
-    if 'reset_form' not in st.session_state:
-        st.session_state.reset_form = False
-
-def show_login_page():
-    """Exibe página de login/cadastro."""
-    st.markdown('# 🍽️ Caloria - Análise Nutricional Inteligente', unsafe_allow_html=True)
-    tab1, tab2 = st.tabs(["🔐 Login", "📝 Cadastro"])
+    tab1, tab2 = st.tabs(["📊 Sistema", "💾 Backup"])
 
     with tab1:
-        with st.form("login_form"):
-            username = st.text_input("Usuário", key="login_user")
-            password = st.text_input("Senha", type='password', key="login_pass")
-            submit = st.form_submit_button("Entrar", use_container_width=True)
+        st.markdown("### Status do Sistema")
+        col1, col2 = st.columns(2)
 
-            if submit:
-                user = get_user_by_username(username)
-                if user and verify_password_hash(user['password_hash'], password):
-                    st.session_state.user_id = user['id']
-                    st.session_state.username = user['username']
-                    st.session_state.logged_in = True
-                    st.success("Login realizado com sucesso!")
-                    st.rerun()
-                else:
-                    st.error("Usuário ou senha inválidos.")
+        with col1:
+            st.markdown("**APIs Configuradas:**")
+            perplexity_key = os.getenv('PERPLEXITY_API_KEY')
+            if perplexity_key:
+                st.success("✅ Perplexity API")
+            else:
+                st.error("❌ Perplexity API")
+
+            gemini_key = os.getenv('GEMINI_KEY') or os.getenv('GEMINI_API_KEY')
+            if gemini_key:
+                st.success("✅ Gemini Vision")
+            else:
+                st.error("❌ Gemini Vision")
+
+        with col2:
+            st.markdown("**Módulos:**")
+            if BACKUP_AVAILABLE:
+                st.success("✅ Backup")
+            else:
+                st.error("❌ Backup")
+
+            if REPORTS_AVAILABLE:
+                st.success("✅ Relatórios")
+            else:
+                st.error("❌ Relatórios")
+
+        st.divider()
+        st.markdown("### Versão do Banco de Dados")
+        st.info(f"📍 Local: {SQLITE_PATH}")
 
     with tab2:
-        with st.form("register_form"):
-            st.subheader("Criar nova conta")
-            new_username = st.text_input("Usuário", key="reg_user")
-            new_password = st.text_input("Senha", type='password', key="reg_pass")
-            confirm_password = st.text_input("Confirmar Senha", type='password', key="reg_confirm")
+        st.markdown("### 💾 Gerenciamento de Backup")
+        st.info("Baixe o arquivo de banco de dados atual ou faça upload de um arquivo .db para restaurar.")
 
-            st.divider()
-            st.subheader("Dados pessoais (opcional)")
-            col1, col2 = st.columns(2)
-            with col1:
-                weight = st.number_input("⚖️ Peso (kg)", min_value=0.0, max_value=500.0, format="%.1f", key="reg_weight")
-                height = st.number_input("📏 Altura (m)", min_value=0.0, max_value=3.0, format="%.2f", key="reg_height")
-            with col2:
-                birth_date = st.date_input(
-                    "🎂 Data de Nascimento",
-                    value=date(1990, 1, 1),
-                    min_value=date(1920, 1, 1),
-                    max_value=date.today(),
-                    key="reg_birth"
-                )
+        col1, col2 = st.columns(2)
+        with col1:
+            # Download do arquivo .db atual
+            try:
+                if os.path.exists(SQLITE_PATH):
+                    with open(SQLITE_PATH, 'rb') as fh:
+                        db_bytes = fh.read()
+                    filename = os.path.basename(SQLITE_PATH) or 'caloria.db'
+                    st.download_button("📥 Baixar arquivo .db", data=db_bytes, file_name=filename, mime="application/x-sqlite3", use_container_width=True)
+                else:
+                    st.warning("Arquivo de banco de dados não encontrado para download.")
+            except Exception as e:
+                st.error(f"Erro ao preparar download: {e}")
 
-            st.divider()
-            st.subheader("Metas nutricionais (opcional)")
-            cal_limit = st.number_input("🔥 Meta de Calorias (kcal/dia)", min_value=500, max_value=10000, value=2000, step=50, key="reg_cal")
-            st.caption("Distribuição de macronutrientes (devem somar 100%)")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                protein_pct = st.slider("🥩 Proteína (%)", min_value=10, max_value=60, value=30, step=5, key="reg_prot_pct")
-            with col2:
-                fat_pct = st.slider("🧈 Gordura (%)", min_value=10, max_value=60, value=25, step=5, key="reg_fat_pct")
-            with col3:
-                carbs_pct = st.slider("🍞 Carboidrato (%)", min_value=10, max_value=70, value=45, step=5, key="reg_carbs_pct")
+        with col2:
+            st.markdown("### 📤 Restaurar Backup (.db)")
+            uploaded = st.file_uploader("Envie um arquivo .db para restaurar (isso substituirá o banco atual)", type=['db'], accept_multiple_files=False)
+            if uploaded is not None:
+                confirm = st.checkbox("Confirmo que desejo substituir o banco de dados atual pelo arquivo enviado (ação irreversível)")
+                if confirm:
+                    if st.button("🔁 Restaurar agora", type="primary"):
+                        try:
+                            # Salvar upload temporariamente
+                            tmp_path = os.path.join(os.path.dirname(__file__), 'backups', f"uploaded_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+                            os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+                            with open(tmp_path, 'wb') as out_f:
+                                out_f.write(uploaded.getbuffer())
 
-            total_pct = protein_pct + fat_pct + carbs_pct
-            if total_pct != 100:
-                st.warning(f"⚠️ Total: {total_pct}% - Deve somar 100%")
-            else:
-                st.success(f"✅ Total: {total_pct}%")
+                            # Fazer cópia de segurança do DB atual (se existir)
+                            if os.path.exists(SQLITE_PATH):
+                                pre_backup = os.path.join(os.path.dirname(__file__), 'backups', f"pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+                                shutil.copy2(SQLITE_PATH, pre_backup)
 
-            # Calcular gramas
-            protein_grams = (cal_limit * protein_pct / 100) / 4
-            fat_grams = (cal_limit * fat_pct / 100) / 9
-            carbs_grams = (cal_limit * carbs_pct / 100) / 4
-            st.caption(f"🥩 {protein_grams:.0f}g | 🧈 {fat_grams:.0f}g | 🍞 {carbs_grams:.0f}g")
-
-            submit = st.form_submit_button("Cadastrar", use_container_width=True)
-
-            if submit:
-                if not new_username or not new_password:
-                    st.error("Preencha usuário e senha.")
-                elif new_password != confirm_password:
-                    st.error("As senhas não coincidem.")
-                elif total_pct != 100:
-                    st.error("Os percentuais devem somar 100%.")
-                elif get_user_by_username(new_username):
-                    st.error("Este usuário já existe.")
+                            # Substituir o DB atual
+                            shutil.copy2(tmp_path, SQLITE_PATH)
+                            st.success("✅ Restauração concluída. Reinicie o app para carregar o novo banco.")
+                        except Exception as e:
+                            st.error(f"❌ Erro ao restaurar backup: {e}")
+                else:
+                    st.info("Marque a confirmação para habilitar a restauração.")
                 else:
                     pwd_hash = create_password_hash(new_password)
-                    # Calcular limites em gramas
-                    protein_limit = (cal_limit * protein_pct / 100) / 4
-                    fat_limit = (cal_limit * fat_pct / 100) / 9
-                    carbs_limit = (cal_limit * carbs_pct / 100) / 4
                     user_id = create_user(
                         new_username,
                         pwd_hash,
                         weight=weight or None,
                         height=height or None,
-                        cal_limit=float(cal_limit),
-                        protein_limit=protein_limit,
-                        fat_limit=fat_limit,
-                        carbs_limit=carbs_limit,
-                        sugar_limit=None,
-                        birth_date=birth_date,
-                        protein_pct=float(protein_pct),
-                        fat_pct=float(fat_pct),
-                        carbs_pct=float(carbs_pct)
+                        cal_limit=cal_limit or None
                     )
                     st.success("Conta criada com sucesso! Faça login.")
 
@@ -218,7 +168,7 @@ def show_sidebar():
         st.divider()
         page = st.radio(
             "Navegação",
-            ["🍽️ Nova Análise", "📊 Resumo Diário", "📈 Histórico", "📄 Relatórios", "👤 Meu Perfil", "💾 Backup/Restore", "⚙️ Configurações"],
+            ["🍽️ Nova Análise", "📊 Resumo Diário", "📈 Histórico", "📄 Relatórios", "👤 Meu Perfil", "⚙️ Configurações"],
             label_visibility="collapsed"
         )
 
@@ -531,7 +481,7 @@ def show_history_page():
     df['date'] = pd.to_datetime(df['date']).dt.strftime('%d/%m/%Y')
     df['meal_type'] = df['meal_type'].map({"breakfast": "☀️ Café", "lunch": "🌤️ Almoço", "dinner": "🌙 Jantar", "snack": "🍪 Lanche"})
 
-    st.dataframe(df[['date', 'meal_type', 'description', 'calories', 'protein', 'carbs', 'fat_total']].sort_values('date', ascending=False), use_container_width=True)
+    st.dataframe(df[['date', 'meal_type', 'description', 'calories', 'protein', 'carbs', 'fat_total', 'fiber', 'sodium']].sort_values('date', ascending=False), use_container_width=True)
 
     # Estatísticas
     st.divider()
@@ -771,66 +721,8 @@ def show_backup_page():
                 except Exception as e:
                     st.error(f"❌ Erro ao criar backup: {str(e)}")
 
-    with tab2:
-        st.markdown("### 📤 Restaurar Backup")
-        backups = list_backups()
-
-        if not backups:
-            st.info("Nenhum backup disponível.")
-            return
-
-        for backup in backups:
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                st.write(f"📅 {backup['created'].strftime('%d/%m/%Y %H:%M')}")
-            with col2:
-                st.write(f"**Usuários:** {backup['total_users']}")
-            with col3:
-                st.write(f"**Refeições:** {backup['total_meals']}")
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                with open(backup['filepath'], 'r', encoding='utf-8') as f:
-                    st.download_button("📥 Download", data=f.read(), file_name=backup['filename'], mime="application/json", key=f"dl_{backup['filename']}")
-            with col2:
-                if st.button("🔄 Restaurar", key=f"restore_{backup['filename']}"):
-                    try:
-                        stats = import_from_json(backup['filepath'])
-                        st.success(f"Restaurado! {stats['users_imported']} usuários, {stats['meals_imported']} refeições")
-                    except Exception as e:
-                        st.error(f"Erro: {str(e)}")
-            with col3:
-                if st.button("🗑️ Excluir", key=f"del_{backup['filename']}"):
-                    if delete_backup(backup['filepath']):
-                        st.success("Backup excluído!")
-                        st.rerun()
-                    else:
-                        st.error("Erro ao excluir.")
-
-def show_settings_page():
-    """Página de configurações."""
-    st.markdown("## ⚙️ Configurações")
-
-    tab1, tab2 = st.tabs(["📊 Sistema", "💾 Backup"])
-
-    with tab1:
-        st.markdown("### Status do Sistema")
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("**APIs Configuradas:**")
-            perplexity_key = os.getenv('PERPLEXITY_API_KEY')
-            if perplexity_key:
-                st.success("✅ Perplexity API")
-            else:
-                st.error("❌ Perplexity API")
-
-            gemini_key = os.getenv('GEMINI_KEY') or os.getenv('GEMINI_API_KEY')
-            if gemini_key:
-                st.success("✅ Gemini Vision")
-            else:
-                st.error("❌ Gemini Vision")
-
+    # backup listing removed; backup management is handled in the Configurações tab (download/upload .db)
+# show_backup_page removed — backup UI consolidated in Configurações (download/upload .db)
         with col2:
             st.markdown("**Módulos:**")
             if BACKUP_AVAILABLE:
@@ -849,28 +741,48 @@ def show_settings_page():
 
     with tab2:
         st.markdown("### 💾 Gerenciamento de Backup")
-        st.info("Crie backups automáticos dos seus dados.")
+        st.info("Baixe o arquivo de banco de dados atual ou faça upload de um arquivo .db para restaurar.")
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📥 Criar Novo Backup", type="primary", use_container_width=True):
-                with st.spinner("Criando backup..."):
-                    try:
-                        filepath = quick_backup()
-                        st.success(f"✅ Backup criado com sucesso!")
-                        st.info(f"📍 Local: {filepath}")
-                    except Exception as e:
-                        st.error(f"❌ Erro: {str(e)}")
-
-        with col2:
-            if st.button("📤 Ver Backups", use_container_width=True):
-                backups = list_backups()
-                if backups:
-                    st.success(f"✅ {len(backups)} backup(s) encontrado(s)")
-                    for backup in backups[:5]:  # Mostrar últimos 5
-                        st.caption(f"📅 {backup['created'].strftime('%d/%m/%Y %H:%M')} - {backup['size_mb']} MB")
+            # Download do arquivo .db atual
+            try:
+                if os.path.exists(SQLITE_PATH):
+                    with open(SQLITE_PATH, 'rb') as fh:
+                        db_bytes = fh.read()
+                    filename = os.path.basename(SQLITE_PATH) or 'caloria.db'
+                    st.download_button("📥 Baixar arquivo .db", data=db_bytes, file_name=filename, mime="application/x-sqlite3", use_container_width=True)
                 else:
-                    st.info("Nenhum backup disponível")
+                    st.warning("Arquivo de banco de dados não encontrado para download.")
+            except Exception as e:
+                st.error(f"Erro ao preparar download: {e}")
+
+            with col2:
+                st.markdown("### 📤 Restaurar Backup (.db)")
+                uploaded = st.file_uploader("Envie um arquivo .db para restaurar (isso substituirá o banco atual)", type=['db'], accept_multiple_files=False)
+                if uploaded is not None:
+                    confirm = st.checkbox("Confirmo que desejo substituir o banco de dados atual pelo arquivo enviado (ação irreversível)")
+                    if confirm:
+                        if st.button("🔁 Restaurar agora", type="primary"):
+                            try:
+                                # Salvar upload temporariamente
+                                tmp_path = os.path.join(os.path.dirname(__file__), 'backups', f"uploaded_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+                                os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+                                with open(tmp_path, 'wb') as out_f:
+                                    out_f.write(uploaded.getbuffer())
+
+                                # Fazer cópia de segurança do DB atual (se existir)
+                                if os.path.exists(SQLITE_PATH):
+                                    pre_backup = os.path.join(os.path.dirname(__file__), 'backups', f"pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+                                    shutil.copy2(SQLITE_PATH, pre_backup)
+
+                                # Substituir o DB atual
+                                shutil.copy2(tmp_path, SQLITE_PATH)
+                                st.success("✅ Restauração concluída. Reinicie o app para carregar o novo banco.")
+                            except Exception as e:
+                                st.error(f"❌ Erro ao restaurar backup: {e}")
+                    else:
+                        st.info("Marque a confirmação para habilitar a restauração.")
 
 # Main
 init_session_state()
@@ -890,7 +802,5 @@ else:
         show_reports_page()
     elif page == "👤 Meu Perfil":
         show_profile_page()
-    elif page == "💾 Backup/Restore":
-        show_backup_page()
     elif page == "⚙️ Configurações":
         show_settings_page()
