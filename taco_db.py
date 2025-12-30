@@ -1,4 +1,5 @@
 """
+# TODO: Atualizar create_basic_taco_table() com 596 alimentos da TACO 4ª edição (arquivo taco-4a-edicao)
 Módulo para gerenciar a tabela TACO (Tabela Brasileira de Composição de Alimentos).
 Baixa a tabela oficial e armazena no banco caloria.db para buscas rápidas.
 
