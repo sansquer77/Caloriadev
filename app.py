@@ -55,6 +55,9 @@ st.set_page_config(
 
 # Inicializa o banco de dados
 init_db()
+# Inicializa a tabela TACO no banco consolidado
+if TACO_AVAILABLE:
+    init_taco_db()
 
 # CSS customizado
 st.markdown("""
