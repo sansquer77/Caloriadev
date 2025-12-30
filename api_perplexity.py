@@ -849,8 +849,12 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
                 if off_result.get('found_items'):
                     print(f"✅ Open Food Facts encontrou nutrientes para o rótulo")
                     off_nutrients = off_result.get('nutrients', {})
-
-                    result = {
+                    # Exibir produto retornado para confirmação do usuário
+                    off_found = off_result.get('found_items', [{}])[0]
+                    off_brand = off_found.get('brand', '')
+                    off_name = off_found.get('matched', '') or off_found.get('name', '')
+                    off_serving = off_nutrients.get('serving_size', serving_size or f'{serving_val}{serving_unit}')
+                    return {
                         'calories': off_nutrients.get('calories', 0),
                         'protein': off_nutrients.get('protein', 0),
                         'fat_total': off_nutrients.get('fat_total', 0),
@@ -866,11 +870,13 @@ def analyze_meal_photo(image_bytes: bytes) -> Optional[Dict]:
                         'items_detected': [product_name],
                         'description': f"{product_name} ({brand})" if brand else product_name,
                         'source': 'Open Food Facts (via Gemini)',
-                        'serving_size': serving_size or f'{serving_val}{serving_unit}',
-                        'quantity_adjustment': True
+                        'serving_size': off_serving,
+                        'quantity_adjustment': True,
+                        'off_match_name': off_name,
+                        'off_match_brand': off_brand,
+                        'off_match_serving': off_serving,
+                        'off_match_confirm': False
                     }
-                    print(f"Nutrientes do OFF: {result}")
-                    return result
 
             # Tentar Perplexity como fallback final
             # Usar a mesma porção real (serving_val) para consulta

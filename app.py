@@ -449,6 +449,13 @@ def show_analysis_page():
                     import re
                     product_name = nutrients.get('items_detected', ['Produto'])[0]
                     serving_size = nutrients.get('serving_size', '100g')
+                    # Se veio match do OFF, pedir confirmação
+                    if nutrients.get('off_match_name'):
+                        st.warning(f"Produto encontrado no Open Food Facts: **{nutrients['off_match_name']}** (Marca: {nutrients.get('off_match_brand','')}) | Porção: {nutrients.get('off_match_serving','')} ")
+                        confirm = st.radio("Este produto corresponde ao que você consumiu?", ("Sim, usar dados do OFF", "Não, buscar manualmente"), key="off_confirm")
+                        if confirm == "Não, buscar manualmente":
+                            st.info("Por favor, descreva o produto manualmente na aba 'Descrever Refeição' para maior precisão.")
+                            return
                     st.write(f"🔍 Gemini identificou: {product_name}")
                     # Extrair valor numérico e unidade da porção
                     match = re.search(r'(\d+(?:\.\d+)?)\s*(g|gr|ml)', str(serving_size).lower())
