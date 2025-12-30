@@ -25,6 +25,14 @@ try:
 except ImportError:
     TACO_AVAILABLE = False
     print("Módulo TACO não disponível")
+    
+# Importar module de correcoes de porcoes
+try:
+        from portion_corrections import correct_portion_size
+        PORTION_CORRECTIONS_AVAILABLE = True
+    except ImportError:
+            PORTION_CORRECTIONS_AVAILABLE = False
+            print("Módulo portion_corrections não disponível")
 
 # Importar módulo Open Food Facts
 try:
@@ -350,6 +358,9 @@ def parse_food_items(meal_text: str) -> List[Tuple[str, float]]:
         if food_name:
             items.append((food_name, quantity))
     
+        # Aplicar correcoes de porcoes para alimentos conhecidos
+            if PORTION_CORRECTIONS_AVAILABLE:
+                    items = correct_portion_size(items)
     return items
 
 
