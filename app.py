@@ -796,20 +796,54 @@ def show_backup_page():
 
 # ===== Login Page (mínimo) =====
 def show_login_page():
-    st.markdown("## 🔐 Login")
-    username = st.text_input("Usuário")
-    password = st.text_input("Senha", type="password")
-    if st.button("Entrar", type="primary"):
-        user = get_user_by_username(username)
-        if user and verify_password_hash(user['password_hash'], password):
-            st.session_state.logged_in = True
-            st.session_state.user_id = user['id']
-            st.session_state.username = user['username']
-            st.success("Login realizado com sucesso!")
-            st.experimental_rerun()
-        else:
-            st.error("Usuário ou senha inválidos.")
-    st.info("Ainda não tem conta? Peça para um administrador cadastrar.")
+    st.markdown("## 🔐 Acesso ao Sistema")
+    tab_login, tab_register = st.tabs(["Entrar", "Criar Conta"])
+
+    with tab_login:
+        username = st.text_input("Usuário", key="login_user")
+        password = st.text_input("Senha", type="password", key="login_pass")
+        if st.button("Entrar", type="primary", key="btn_login"):
+            user = get_user_by_username(username)
+            if user and verify_password_hash(user['password_hash'], password):
+                st.session_state.logged_in = True
+                st.session_state.user_id = user['id']
+                st.session_state.username = user['username']
+                st.success("Login realizado com sucesso!")
+                st.experimental_rerun()
+            else:
+                st.error("Usuário ou senha inválidos.")
+
+    with tab_register:
+        st.markdown("### Criar nova conta")
+        new_username = st.text_input("Novo usuário", key="reg_user")
+        new_password = st.text_input("Senha", type="password", key="reg_pass")
+        confirm_password = st.text_input("Confirmar senha", type="password", key="reg_pass2")
+        weight = st.number_input("Peso (kg) (opcional)", min_value=0.0, max_value=300.0, value=0.0, step=0.1, key="reg_weight")
+        height = st.number_input("Altura (m) (opcional)", min_value=0.0, max_value=2.5, value=0.0, step=0.01, key="reg_height")
+        cal_limit = st.number_input("Meta calórica diária (opcional)", min_value=0, max_value=10000, value=2000, step=50, key="reg_cal")
+        if st.button("Criar Conta", type="primary", key="btn_register"):
+            if not new_username or not new_password:
+                st.error("Preencha usuário e senha.")
+            elif new_password != confirm_password:
+                st.error("As senhas não coincidem.")
+            elif len(new_password) < 6:
+                st.error("A senha deve ter pelo menos 6 caracteres.")
+            elif get_user_by_username(new_username):
+                st.error("Usuário já existe.")
+            else:
+                pwd_hash = create_password_hash(new_password)
+                user_id = create_user(
+                    new_username,
+                    pwd_hash,
+                    weight=weight or None,
+                    height=height or None,
+                    cal_limit=cal_limit or None
+                )
+                if user_id:
+                    st.success("Conta criada com sucesso! Faça login.")
+                    st.session_state['login_user'] = new_username
+                else:
+                    st.error("Erro ao criar conta. Tente outro nome de usuário.")
 
 
 init_session_state()
