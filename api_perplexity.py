@@ -26,13 +26,6 @@ except ImportError:
     TACO_AVAILABLE = False
     print("Módulo TACO não disponível")
 
-    # Import portion corrections module
-    try:
-            from portion_corrections import correct_portion_size
-            PORTION_CORRECTIONS_AVAILABLE = True
-        except ImportError:
-                PORTION_CORRECTIONS_AVAILABLE = False
-                print("Module portion_corrections not available")
     
     from openfoodfacts_api import get_nutrition_openfoodfacts, search_product_by_barcode
     OPENFOODFACTS_AVAILABLE = True
