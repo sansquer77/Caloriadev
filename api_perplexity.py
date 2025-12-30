@@ -353,81 +353,6 @@ def parse_food_items(meal_text: str) -> List[Tuple[str, float]]:
     return items
 
 
-def extract_items_with_perplexity(meal_text: str) -> Optional[List[Tuple[str, float]]]:
-    """
-    Usa a API Perplexity para extrair uma lista de itens e quantidades a partir
-    de uma descrição textual. Retorna lista de tuplas (nome, quantidade_gramas)
-    ou None se não for possível extrair.
-
-    A função instrui a IA a NÃO INVENTAR itens ou quantidades — se não houver
-    quantidade explícita, utiliza 100g como padrão apenas para compatibilidade.
-    """
-    if not PERPLEXITY_API_KEY:
-        return None
-
-    prompt = f"""Extraia os itens alimentares e suas quantidades (em gramas) do texto abaixo.
-
-Retorne APENAS JSON no formato:
-{"items": [{"name": "arroz branco", "quantity_grams": 150}, ...]}
-
-REGRAS:
-- NÃO invente itens que não estejam mencionados no texto.
-- Se uma quantidade não for especificada, use 100 (significando 100g) como padrão.
-- Não faça estimativas arbitrárias; somente converta números claramente indicados.
-- Se não conseguir extrair itens, retorne {"items": []}.
-
-Texto a analisar: """ + meal_text
-
-    headers = {
-        'Authorization': f'Bearer {PERPLEXITY_API_KEY}',
-        'Content-Type': 'application/json'
-    }
-
-    data = {
-        "model": PERPLEXITY_MODEL,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 400,
-        "temperature": 0.0
-    }
-
-    try:
-        resp = requests.post(PERPLEXITY_API_URL, json=data, headers=headers, timeout=API_TIMEOUT_SHORT)
-        if resp.status_code != 200:
-            print(f"Perplexity items extraction failed: {resp.status_code}")
-            return None
-
-        body = resp.json()
-        content = ''
-        if 'choices' in body and len(body['choices']) > 0:
-            content = body['choices'][0].get('message', {}).get('content', '')
-        else:
-            content = body.get('result', '')
-
-        # Extrair JSON
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content, re.DOTALL)
-        if not json_match:
-            return None
-
-        parsed = json.loads(json_match.group())
-        items = []
-        for it in parsed.get('items', []):
-            name = it.get('name') if isinstance(it, dict) else None
-            qty = it.get('quantity_grams', 100) if isinstance(it, dict) else 100
-            if name:
-                try:
-                    qty = float(qty)
-                except Exception:
-                    qty = 100.0
-                items.append((name.strip(), qty))
-
-        return items
-    except Exception as e:
-        print(f"Erro ao extrair itens com Perplexity: {e}")
-        return None
-
-
 # Marcas conhecidas de produtos industrializados brasileiros
 KNOWN_BRANDS = [
     'yakult', 'nestle', 'nestlé', 'sadia', 'perdigao', 'perdigão', 'seara',
@@ -636,12 +561,6 @@ def analyze_meal_by_text(meal_text: str, barcode: Optional[str] = None) -> Optio
     # 1. Extrair itens e quantidades
     food_items = parse_food_items(meal_text)
     print(f"Itens identificados: {food_items}")
-    # Se vários itens foram extraídos, confirmar/ajustar usando Perplexity
-    if len(food_items) > 1 and PERPLEXITY_API_KEY:
-        perplexity_items = extract_items_with_perplexity(meal_text)
-        if perplexity_items:
-            print(f"Itens extraídos pelo Perplexity: {perplexity_items}")
-            food_items = perplexity_items
     
     if not food_items:
         # Se não conseguiu extrair itens, usa Perplexity direto

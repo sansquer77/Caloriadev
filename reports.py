@@ -85,38 +85,23 @@ def get_daily_breakdown(user_id: int, start_date: date, end_date: date) -> List[
             func.sum(Meal.fat_total).label('fat_total'),
             func.sum(Meal.sugar).label('sugar'),
             func.sum(Meal.fiber).label('fiber'),
-            func.sum(Meal.sodium).label('sodium'),
             func.count(Meal.id).label('meal_count')
         ).filter(
             Meal.user_id == user_id,
             Meal.date >= start_date,
             Meal.date <= end_date
         ).group_by(Meal.date).order_by(Meal.date).all()
-        rows = []
-        for r in results:
-            # Meal.date may be stored as string; coerce to date when possible
-            d = r.date
-            if isinstance(d, str):
-                try:
-                    d = datetime.fromisoformat(d).date()
-                except Exception:
-                    try:
-                        d = datetime.strptime(d, '%Y-%m-%d').date()
-                    except Exception:
-                        pass
-
-            rows.append({
-                'date': d,
-                'calories': float(r.calories or 0),
-                'protein': float(r.protein or 0),
-                'carbs': float(r.carbs or 0),
-                'fat_total': float(r.fat_total or 0),
-                'sugar': float(r.sugar or 0),
-                'fiber': float(r.fiber or 0),
-                'sodium': float(getattr(r, 'sodium', 0) or 0),
-                'meal_count': int(r.meal_count or 0)
-            })
-        return rows
+        
+        return [{
+            'date': r.date,
+            'calories': r.calories or 0,
+            'protein': r.protein or 0,
+            'carbs': r.carbs or 0,
+            'fat_total': r.fat_total or 0,
+            'sugar': r.sugar or 0,
+            'fiber': r.fiber or 0,
+            'meal_count': r.meal_count or 0
+        } for r in results]
     finally:
         session.close()
 
@@ -398,7 +383,6 @@ def generate_pdf_report(
         ['Gorduras', f"{macros['fat_total']:.1f} g", f"{avg_fat:.1f} g"],
         ['Açúcares', f"{macros['sugar']:.1f} g", f"{macros['sugar']/max(days_with_data,1):.1f} g"],
         ['Fibras', f"{macros['fiber']:.1f} g", f"{macros['fiber']/max(days_with_data,1):.1f} g"],
-        ['Sódio', f"{macros.get('sodium', 0):.0f} mg", f"{macros.get('sodium', 0)/max(days_with_data,1):.0f} mg"],
     ]
     
     summary_table = Table(summary_data, colWidths=[6*cm, 5*cm, 5*cm])

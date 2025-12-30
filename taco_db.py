@@ -12,14 +12,7 @@ import re
 from difflib import SequenceMatcher
 
 # Caminho do banco de dados TACO
-# Por desempenho queremos manter apenas um único arquivo de DB (centralizado).
-# Quando possível, usar o banco principal da aplicação (`SQLITE_PATH` do módulo `db`).
-try:
-    from db import SQLITE_PATH as APP_DB_PATH
-    TACO_DB_PATH = APP_DB_PATH
-    print(f"Usando DB central para TACO: {TACO_DB_PATH}")
-except Exception:
-    TACO_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taco.db')
+TACO_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'taco.db')
 # URLs alternativas para download da tabela TACO (a maioria dos sites bloqueiam download direto)
 # Se todas falharem, criamos uma tabela com alimentos básicos brasileiros
 TACO_URLS = [
