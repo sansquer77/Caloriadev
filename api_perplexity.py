@@ -994,9 +994,10 @@ def analyze_meal_by_barcode(barcode: str, quantity_grams: float = 100.0) -> Opti
             'items_detected': [nutrition.get('name', 'Produto')],
             'description': f"{nutrition.get('name', 'Produto')} ({nutrition.get('brand', '')})" if nutrition.get('brand') else nutrition.get('name', 'Produto'),
             'source': 'Open Food Facts',
-            'nutrition_grade': nutrition.get('nutrition_grade', '')
+            'nutrition_grade': nutrition.get('nutrition_grade', ''),
+            'serving_size': nutrition.get('serving_size', '100g'),
+            'quantity_adjustment': True
         }
-        
         print(f"Resultado (barcode): {result}")
         return result
     else:

@@ -418,6 +418,30 @@ def show_analysis_page():
         if barcode_input and barcode_input.strip():
             with st.spinner("📊 Buscando produto no Open Food Facts..."):
                 nutrients = analyze_meal_by_barcode(barcode_input.strip(), quantity_grams=float(barcode_quantity))
+                # Permitir ajuste de quantidade após consulta
+                if nutrients and nutrients.get('quantity_adjustment'):
+                    import re
+                    serving_size = nutrients.get('serving_size', '100g')
+                    match = re.search(r'(\d+(?:\.\d+)?)\s*(g|gr|ml)', str(serving_size).lower())
+                    if match:
+                        default_qty = float(match.group(1))
+                        unit = match.group(2)
+                    else:
+                        default_qty = 100.0
+                        unit = 'g'
+                    quantity_gr = st.number_input(
+                        f"Qual quantidade você consumiu? ({serving_size})",
+                        min_value=1,
+                        max_value=5000,
+                        value=int(default_qty),
+                        step=5,
+                        key="barcode_quantity_adjust"
+                    )
+                    factor = quantity_gr / default_qty
+                    for k in ['calories','protein','fat_total','fat_saturated','carbs','sugar','fiber','sodium','potassium','cholesterol']:
+                        if k in nutrients:
+                            nutrients[k] = nutrients[k] * factor
+                    nutrients['quantity'] = f"{quantity_gr}{unit}"
         # Análise por foto
         elif image_bytes:
             with st.spinner("🤖 Analisando imagem com IA (Gemini Vision)..."):
