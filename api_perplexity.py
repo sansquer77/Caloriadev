@@ -32,7 +32,7 @@ try:
         PORTION_CORRECTIONS_AVAILABLE = True
     except ImportError:
             PORTION_CORRECTIONS_AVAILABLE = False
-            print("Módulo portion_corrections não disponível")
+    print("Módulo portion_corrections não disponível")
 
 # Importar módulo Open Food Facts
 try:
