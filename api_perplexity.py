@@ -534,10 +534,64 @@ def get_nutrition_from_perplexity(food_items: List[Tuple[str, float]]) -> Option
     if not food_items:
         return None
     
-    # Formatar texto dos itens
-    items_text = ", ".join([f"{qty}g de {name}" for name, qty in food_items])
     
-    return analyze_meal_with_perplexity(items_text)
+    # Processar cada item isoladamente e somar os resultados
+    total_nutrients = {
+        'calories': 0.0,
+        'protein': 0.0,
+        'fat_total': 0.0,
+        'fat_saturated': 0.0,
+        'fat_polyunsaturated': 0.0,
+        'fat_monounsaturated': 0.0,
+        'carbs': 0.0,
+        'sugar': 0.0,
+        'fiber': 0.0,
+        'sodium': 0.0,
+        'potassium': 0.0,
+        'cholesterol': 0.0
+    }
+    
+    for food_name, quantity in food_items:
+        # Consultar Perplexity para cada item INDIVIDUALMENTE
+        item_text = f"{quantity}g de {food_name}"
+        print(f"🔍 Consultando Perplexity isoladamente: {item_text}")
+        
+        result = analyze_meal_with_perplexity(item_text)
+        
+        if result and 'error' not in result:
+            # Somar nutrientes do item
+            for key in total_nutrients:
+                total_nutrients[key] += result.get(key, 0)
+        else:
+            error_msg = result.get('error', 'Erro desconhecido') if result else 'Erro na API'
+            print(f"❌ Perplexity falhou para {item_text}: {error_msg}")
+    
+    # Se nenhum item teve sucesso, retornar erro
+    if total_nutrients.get('calories', 0) == 0:
+        return {
+            'error': 'Não foi possível encontrar dados nutricionais para nenhum item no Perplexity.'
+        }
+    
+    # Retornar resultado combinado
+    result = {
+        'calories': total_nutrients.get('calories', 0),
+        'protein': total_nutrients.get('protein', 0),
+        'fat_total': total_nutrients.get('fat_total', 0),
+        'fat_saturated': total_nutrients.get('fat_saturated', 0),
+        'fat_polyunsaturated': total_nutrients.get('fat_polyunsaturated', 0),
+        'fat_monounsaturated': total_nutrients.get('fat_monounsaturated', 0),
+        'carbs': total_nutrients.get('carbs', 0),
+        'sugar': total_nutrients.get('sugar', 0),
+        'fiber': total_nutrients.get('fiber', 0),
+        'sodium': total_nutrients.get('sodium', 0),
+        'potassium': total_nutrients.get('potassium', 0),
+        'cholesterol': total_nutrients.get('cholesterol', 0),
+        'items_detected': [f"{qty}g de {name}" for name, qty in food_items],
+        'source': 'Perplexity (itens isolados)'
+    }
+    
+    print(f"Resultado Perplexity (itens isolados): {result}")
+    return result
 
 
 def analyze_meal_by_text(meal_text: str, barcode: Optional[str] = None) -> Optional[Dict]:
