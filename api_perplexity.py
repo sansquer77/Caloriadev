@@ -350,12 +350,8 @@ def parse_food_items(meal_text: str) -> List[Tuple[str, float]]:
             items.append((food_name, quantity))
     
         # Aplicar correcoes de porcoes para alimentos conhecidos
-            if PORTION_CORRECTIONS_AVAILABLE:
-                    items = correct_portion_size(items)
     return items
 
-
-# Marcas conhecidas de produtos industrializados brasileiros
 KNOWN_BRANDS = [
     'yakult', 'nestle', 'nestlé', 'sadia', 'perdigao', 'perdigão', 'seara',
     'coca-cola', 'coca cola', 'pepsi', 'fanta', 'sprite', 'guarana', 'guaraná',
