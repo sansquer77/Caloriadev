@@ -27,6 +27,7 @@ except ImportError:
     print("Módulo TACO não disponível")
 
     
+try:
     from openfoodfacts_api import get_nutrition_openfoodfacts, search_product_by_barcode
     OPENFOODFACTS_AVAILABLE = True
 except ImportError:
