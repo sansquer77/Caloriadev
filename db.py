@@ -1,9 +1,10 @@
 """
 Módulo de configuração do banco de dados.
 Suporta SQLite (desenvolvimento), MySQL e PostgreSQL (produção).
+Agora consolida todas as tabelas em um único banco: users, meals, alimentos (TACO) e off_cache.
 """
 
-from sqlalchemy import create_engine, Column, Integer, Float, Date, String, ForeignKey, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, Float, Date, String, ForeignKey, DateTime, Text, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from contextlib import contextmanager
@@ -56,6 +57,7 @@ Base = declarative_base()
 # Alias para compatibilidade
 Session = SessionFactory
 
+
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
@@ -76,6 +78,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     meals = relationship('Meal', back_populates='user')
+
 
 class Meal(Base):
     __tablename__ = 'meals'
@@ -110,6 +113,58 @@ class Meal(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship('User', back_populates='meals')
+
+
+class Alimento(Base):
+    """Tabela TACO - Tabela Brasileira de Composição de Alimentos"""
+    __tablename__ = 'alimentos'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    nome = Column(Text, nullable=False)
+    nome_normalizado = Column(Text, nullable=False)
+    calorias = Column(Float, default=0)
+    proteina = Column(Float, default=0)
+    gordura_total = Column(Float, default=0)
+    gordura_saturada = Column(Float, default=0)
+    carboidratos = Column(Float, default=0)
+    acucar = Column(Float, default=0)
+    fibra = Column(Float, default=0)
+    sodio = Column(Float, default=0)
+    potassio = Column(Float, default=0)
+    colesterol = Column(Float, default=0)
+    updated_at = Column(Text, nullable=True)
+    
+    __table_args__ = (
+        Index('idx_nome_normalizado', 'nome_normalizado'),
+    )
+
+
+class OffCache(Base):
+    """Cache local do Open Food Facts - até 1500 itens"""
+    __tablename__ = 'off_cache'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    nome_busca = Column(Text, unique=True, nullable=False)
+    nome_produto = Column(Text, nullable=True)
+    marca = Column(Text, nullable=True)
+    codigo_barras = Column(Text, nullable=True)
+    calorias = Column(Float, default=0)
+    proteina = Column(Float, default=0)
+    gordura_total = Column(Float, default=0)
+    gordura_saturada = Column(Float, default=0)
+    carboidratos = Column(Float, default=0)
+    acucar = Column(Float, default=0)
+    fibra = Column(Float, default=0)
+    sodio = Column(Float, default=0)
+    potassio = Column(Float, default=0)
+    colesterol = Column(Float, default=0)
+    created_at = Column(Text, nullable=True)
+    hits = Column(Integer, default=1)
+    
+    __table_args__ = (
+        Index('idx_off_nome', 'nome_busca'),
+        Index('idx_off_barcode', 'codigo_barras'),
+    )
 
 
 def init_db():
