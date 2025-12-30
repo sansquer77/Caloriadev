@@ -689,64 +689,73 @@ def analyze_meal_by_text(meal_text: str, barcode: Optional[str] = None) -> Optio
     
     # 2. Buscar na TACO primeiro
     taco_result = get_nutrition_from_taco(food_items)
-    
     found_items = taco_result.get('found_items', [])
     not_found = taco_result.get('not_found', [])
     total_nutrients = taco_result.get('nutrients', {})
-    
     sources = []
     if found_items:
         sources.append('TACO')
-    
-    # 3. Para itens não encontrados na TACO, buscar no Open Food Facts
+
+    # 3. Para itens não encontrados na TACO, buscar no cache local (off_cache)
+    from taco_db import search_off_cache
+    cache_found = []
+    cache_not_found = []
+    for food_name, quantity in not_found:
+        cache_result = search_off_cache(food_name)
+        if cache_result:
+            print(f"✅ Cache OFF encontrou: {food_name} → {cache_result.get('name', food_name)}")
+            cache_found.append({
+                'name': food_name,
+                'quantity': f"{quantity}g",
+                'matched': cache_result.get('name', food_name),
+                'brand': cache_result.get('brand', ''),
+                'source': 'Open Food Facts (cache)'
+            })
+            for key in total_nutrients:
+                total_nutrients[key] = total_nutrients.get(key, 0) + cache_result.get(key, 0)
+        else:
+            cache_not_found.append((food_name, quantity))
+    if cache_found:
+        sources.append('Open Food Facts (cache)')
+        found_items.extend(cache_found)
+    not_found = cache_not_found
+
+    # 4. Para itens ainda não encontrados, buscar na API do Open Food Facts
     if not_found and OPENFOODFACTS_AVAILABLE:
         print(f"Buscando no Open Food Facts: {not_found}")
         off_result = get_nutrition_from_openfoodfacts(not_found)
-        
         off_found = off_result.get('found_items', [])
         off_not_found = off_result.get('not_found', [])
         off_nutrients = off_result.get('nutrients', {})
-        
         if off_found:
             sources.append('Open Food Facts')
             found_items.extend(off_found)
-            
-            # Somar nutrientes do Open Food Facts
             for key in total_nutrients:
                 total_nutrients[key] = total_nutrients.get(key, 0) + off_nutrients.get(key, 0)
-        
-        # Atualizar lista de não encontrados
         not_found = off_not_found
-    
-    # 4. Para itens ainda não encontrados, usar Perplexity
+
+    # 5. Para itens ainda não encontrados, usar Perplexity
     if not_found:
         print(f"Buscando no Perplexity: {not_found}")
         perplexity_result = get_nutrition_from_perplexity(not_found)
-        
         if perplexity_result and 'error' not in perplexity_result:
             sources.append('Perplexity')
-            
-            # Somar nutrientes do Perplexity
             for key in total_nutrients:
                 total_nutrients[key] = total_nutrients.get(key, 0) + perplexity_result.get(key, 0)
-            
-            # Adicionar itens encontrados pelo Perplexity
             perplexity_items = perplexity_result.get('items_detected', [])
             for item in perplexity_items:
                 found_items.append({
                     'name': item if isinstance(item, str) else item.get('name', ''),
                     'source': 'Perplexity'
                 })
-    
-    # 5. Verificar se encontrou algo
+
+    # 6. Verificar se encontrou algo
     if not found_items and not total_nutrients.get('calories', 0):
-        # Fallback total: usar Perplexity para tudo
         print("Nenhum item encontrado, usando Perplexity para análise completa...")
         return analyze_meal_with_perplexity(meal_text)
-    
-    # 6. Montar resultado final
+
+    # 7. Montar resultado final
     source_str = ' + '.join(sources) if sources else 'Estimativa'
-    
     result = {
         'calories': total_nutrients.get('calories', 0),
         'protein': total_nutrients.get('protein', 0),
@@ -763,7 +772,6 @@ def analyze_meal_by_text(meal_text: str, barcode: Optional[str] = None) -> Optio
         'items_detected': [item.get('name', item) if isinstance(item, dict) else item for item in found_items],
         'source': source_str
     }
-    
     print(f"Resultado final: {result}")
     return result
 

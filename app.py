@@ -505,13 +505,17 @@ def show_analysis_page():
                 elif nutrients.get('type') == 'food':
                     items = nutrients.get('items', [])
                     st.write("🔍 Gemini identificou os seguintes alimentos:")
-                    for item in items:
+                    for idx, item in enumerate(items):
+                        slider_key = f"slider_{item['name']}_{idx}"
+                        if slider_key not in st.session_state:
+                            st.session_state[slider_key] = int(item.get('quantity_grams', 100))
                         item['quantity_grams'] = st.slider(
                             f"Quantidade de {item['name']} (g)",
                             min_value=10,
                             max_value=500,
-                            value=int(item.get('quantity_grams', 100)),
-                            step=5
+                            value=st.session_state[slider_key],
+                            step=5,
+                            key=slider_key
                         )
                     # Recalcular nutrientes conforme quantidades (se necessário, depende do fluxo)
                     # Aqui pode-se chamar novamente a função de análise se quiser precisão
